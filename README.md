@@ -50,6 +50,23 @@ Message {
 }
 ```
 
+## 媒体资源包
+
+`resources/media/` 存放 tar.zst 合集（默认不进 git，由脚本重建）：
+
+```bash
+./scripts/build-media.sh      # 从原版模板重新生成
+```
+
+| 包 | 内容 | 解压时机 |
+|---|---|---|
+| `sticker-thumbs.tar.zst` | 表情缩略图 | 启动同步 |
+| `avatars.tar.zst` | 用户/角色头像 | 启动同步 |
+| `groups.tar.zst` | 群资料 | 启动同步 |
+| `stickers-*.tar.zst` | 各表情包合集 | 后台线程 |
+
+解压到 `dataRoot`，以 `<sha256>.done` 作为缓存标记；已解压过则直接跳过。
+
 ## 当前进度
 
 - [x] 窗口壳 / 单实例 / 无边框标题栏

@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod ipc;
 mod logging;
+mod media;
 mod paths;
 mod state;
 
@@ -24,6 +25,15 @@ pub fn run() {
             paths.seed()?;
             let config = paths.load_config()?;
             let db = db::Db::open(&paths.db_file())?;
+            media::extract_startup(&paths)?;
+
+            let background_paths = paths.clone();
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let _ = media::extract_background(&background_paths);
+                let _ = tauri::Emitter::emit(&handle, "media:ready", true);
+            });
+
             app.manage(state::AppState::new(paths, config, db));
             Ok(())
         })
