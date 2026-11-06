@@ -1123,6 +1123,9 @@ fn settings_body(cfg: &crate::config::Config) -> Value {
             "api_key_set": !cfg.llm.api_key.trim().is_empty(),
             "api_key_hint": mask_key(&cfg.llm.api_key),
         },
+        "behavior": {
+            "reply_speed": cfg.behavior.reply_speed,
+        },
         "setup": { "required": false },
     })
 }
