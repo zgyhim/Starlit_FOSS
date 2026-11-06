@@ -103,6 +103,7 @@ pub fn run() {
             let paths_for_media = paths.clone();
             app.manage(state::AppState::new(paths, config, db, instance_lock));
             autonomy::spawn(app.handle().clone());
+            group::spawn_ambient(app.handle().clone());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
