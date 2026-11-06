@@ -220,12 +220,18 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, _user_te
         let response = client
             .post(&url)
             .bearer_auth(&cfg.llm.api_key)
-            .json(&json!({
-                "model": cfg.llm.model,
-                "messages": messages,
-                "temperature": cfg.llm.temperature,
-                "stream": false,
-            }))
+            .json(&{
+                let mut body = json!({
+                    "model": cfg.llm.model,
+                    "messages": messages,
+                    "temperature": cfg.llm.temperature,
+                    "stream": false,
+                });
+                if !cfg.llm.reasoning_effort.trim().is_empty() {
+                    body["reasoning_effort"] = json!(cfg.llm.reasoning_effort.trim());
+                }
+                body
+            })
             .send()
             .await;
 

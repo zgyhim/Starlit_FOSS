@@ -648,7 +648,7 @@ fn settings_body(cfg: &crate::config::Config) -> Value {
         "llm": {
             "base_url": cfg.llm.base_url,
             "model": cfg.llm.model,
-            "reasoning_effort": "",
+            "reasoning_effort": cfg.llm.reasoning_effort,
             "api_key_set": !cfg.llm.api_key.trim().is_empty(),
             "api_key_hint": mask_key(&cfg.llm.api_key),
         },
@@ -678,6 +678,9 @@ fn update_settings(state: &AppState, body: Option<String>) -> Result<Value, Stri
             if !value.trim().is_empty() {
                 cfg.llm.model = value.trim().to_string();
             }
+        }
+        if let Some(value) = llm.get("reasoning_effort").and_then(Value::as_str) {
+            cfg.llm.reasoning_effort = value.trim().to_string();
         }
         if let Some(value) = llm.get("api_key").and_then(Value::as_str) {
             if !value.trim().is_empty() {

@@ -26,6 +26,8 @@ pub struct LlmConfig {
     pub model: String,
     pub timeout: u64,
     pub temperature: f64,
+    /// OpenAI 兼容的 reasoning_effort；空字符串表示交给服务商默认。
+    pub reasoning_effort: String,
 }
 
 impl Default for LlmConfig {
@@ -36,6 +38,7 @@ impl Default for LlmConfig {
             model: "deepseek-flash".into(),
             timeout: 90,
             temperature: 0.9,
+            reasoning_effort: "low".into(),
         }
     }
 }

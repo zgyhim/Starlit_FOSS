@@ -4,6 +4,7 @@ llm:
   model: deepseek-flash
   timeout: 90
   temperature: 0.9
+  reasoning_effort: low
 qq:
   self_id: ''
   owner_id: ''
