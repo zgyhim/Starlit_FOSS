@@ -18,6 +18,9 @@ struct ArchiveEntry {
     name: String,
     target: String,
     sha256: String,
+    /// 解压后的总字节数，用于进度条。
+    #[serde(default)]
+    uncompressed: u64,
     /// startup: 启动时同步解压；background: 后台解压。
     scope: String,
 }
@@ -74,9 +77,14 @@ fn write_file_record(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> 
 }
 
 /// 解压单个归档；失败时保留部分文件但不写缓存标记，下次重试。
-fn extract_one(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
+fn extract_one(
+    paths: &Paths,
+    entry: &ArchiveEntry,
+    on_bytes: &mut dyn FnMut(u64),
+) -> Result<(), String> {
     if looks_extracted(paths, entry) {
         let _ = write_file_record(paths, entry);
+        on_bytes(entry.uncompressed);
         return Ok(());
     }
     let archive = paths.resources.join("media").join(&entry.name);
@@ -102,9 +110,11 @@ fn extract_one(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
         {
             continue;
         }
+        let size = item.header().size().unwrap_or(0);
         // unpack_in 会在目标目录外时拒绝写入。
         item.unpack_in(&base)
             .map_err(|e| format!("写入 {} 失败: {e}", path.display()))?;
+        on_bytes(size);
     }
 
     let _ = write_file_record(paths, entry);
@@ -117,38 +127,30 @@ fn extract_one(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
     Ok(())
 }
 
-/// 启动阶段：解压体积小、首屏需要的资源。
-pub fn extract_startup(paths: &Paths) -> Result<(), String> {
+/// 解压全部资源包，并在每完成一个后回调进度。
+pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) {
     let Some(manifest) = load_manifest(&paths.resources) else {
-        return Ok(());
+        progress(0, 0);
+        return;
     };
-    for entry in manifest
-        .archives
-        .iter()
-        .filter(|entry| entry.scope == "startup")
-    {
-        if let Err(error) = extract_one(paths, entry) {
+    let total: u64 = manifest.archives.iter().map(|entry| entry.uncompressed).sum();
+    let total = if total == 0 { manifest.archives.len() as u64 } else { total };
+    progress(0, total as usize);
+    let mut done = 0u64;
+    for entry in &manifest.archives {
+        let weight = if entry.uncompressed == 0 { 1 } else { entry.uncompressed };
+        let mut on_bytes = |bytes: u64| {
+            done = done.saturating_add(bytes);
+            progress(done.min(total) as usize, total as usize);
+        };
+        if let Err(error) = extract_one(paths, entry, &mut on_bytes) {
             crate::state::append_log(&paths.log_file(), &format!("media: {error}"));
         }
-    }
-    Ok(())
-}
-
-/// 后台阶段：表情包合集较大，不阻塞窗口。
-pub fn extract_background(paths: &Paths) -> Result<(), String> {
-    let Some(manifest) = load_manifest(&paths.resources) else {
-        return Ok(());
-    };
-    for entry in manifest
-        .archives
-        .iter()
-        .filter(|entry| entry.scope == "background")
-    {
-        if let Err(error) = extract_one(paths, entry) {
-            crate::state::append_log(&paths.log_file(), &format!("media: {error}"));
+        if entry.uncompressed == 0 {
+            done = done.saturating_add(1);
+            progress(done.min(total) as usize, total as usize);
         }
     }
-    Ok(())
 }
 
 /// 删除所有由资源包解压出来的文件，保留用户自己上传的内容。

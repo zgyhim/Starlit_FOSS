@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Mutex, RwLock};
 
 use crate::config::Config;
@@ -14,6 +14,8 @@ pub struct AppState {
     pub pending_media_clear: AtomicBool,
     /// 媒体资源包是否已全部解压完成。
     pub media_ready: AtomicBool,
+    pub media_done: AtomicUsize,
+    pub media_total: AtomicUsize,
 }
 
 impl AppState {
@@ -25,6 +27,8 @@ impl AppState {
             started_at: chrono::Utc::now().timestamp(),
             pending_media_clear: AtomicBool::new(false),
             media_ready: AtomicBool::new(false),
+            media_done: AtomicUsize::new(0),
+            media_total: AtomicUsize::new(0),
         }
     }
 

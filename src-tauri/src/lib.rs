@@ -86,8 +86,14 @@ pub fn run() {
                 use std::sync::atomic::Ordering;
                 use tauri::Manager;
 
-                let _ = media::extract_startup(&paths_for_media);
-                let _ = media::extract_background(&paths_for_media);
+                let target = handle.clone();
+                media::extract_all(&paths_for_media, |done, total| {
+                    use tauri::Manager;
+                    if let Some(state) = target.try_state::<state::AppState>() {
+                        state.media_done.store(done, Ordering::Relaxed);
+                        state.media_total.store(total, Ordering::Relaxed);
+                    }
+                });
                 state::append_log(&log_file, "media cache ready");
                 if let Some(state) = handle.try_state::<state::AppState>() {
                     state.media_ready.store(true, Ordering::Relaxed);

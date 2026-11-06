@@ -600,6 +600,8 @@ pub fn set_media_auto_clear(state: State<'_, AppState>, enabled: bool) -> Result
 pub fn media_status(state: State<'_, AppState>) -> Value {
     json!({
         "ready": state.media_ready.load(std::sync::atomic::Ordering::Relaxed),
+        "done": state.media_done.load(std::sync::atomic::Ordering::Relaxed),
+        "total": state.media_total.load(std::sync::atomic::Ordering::Relaxed),
     })
 }
 
