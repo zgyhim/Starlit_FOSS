@@ -37,6 +37,34 @@ fn group_name(state: &AppState, id: &str) -> String {
         .unwrap_or_else(|| "群聊".into())
 }
 
+fn group_member_ids(state: &AppState, gid: &str) -> Option<Vec<String>> {
+    let path = state.paths.data.join("groups").join(gid).join("members.json");
+    let text = std::fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    value.get("members").and_then(Value::as_array).map(|items| {
+        items
+            .iter()
+            .filter_map(|item| {
+                item.as_str().map(str::to_string)
+                    .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))
+            })
+            .collect()
+    })
+}
+
+fn group_muted(state: &AppState, gid: &str) -> bool {
+    read_json(state, "groups.json")
+        .get("groups")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                (item.get("id").and_then(Value::as_str) == Some(gid))
+                    .then(|| item.get("mute_all").and_then(Value::as_bool).unwrap_or(false))
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn characters(state: &AppState) -> Vec<(String, String)> {
     read_json(state, "characters.json")
         .get("characters")
@@ -270,13 +298,17 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
             return;
         };
         let cfg = state.config();
-        if !cfg.group.enabled || !group_daily_left(&state, &cfg) {
+        if !cfg.group.enabled || !group_daily_left(&state, &cfg) || group_muted(&state, &conv.id) {
             return;
         }
         if hourly_count(&state, &conv) >= cfg.group.msgs_per_hour as i64 {
             return;
         }
-        let members = characters(&state);
+        let allowed = group_member_ids(&state, &conv.id);
+        let mut members = characters(&state);
+        if let Some(ids) = allowed {
+            members.retain(|(id, _)| ids.iter().any(|allowed| allowed == id));
+        }
         if members.is_empty() {
             return;
         }
@@ -334,10 +366,19 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
                 .map(|(_, name)| name.as_str())
                 .collect::<Vec<_>>()
                 .join("、");
+            let memories = crate::memory::recall(&state, &user_text, cfg.memory.recall_top_k);
+            let memory_block = if memories.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n你可能记得这些事：\n{}",
+                    memories.iter().map(|m| format!("- {m}")).collect::<Vec<_>>().join("\n")
+                )
+            };
             let system = format!(
                 "你是{name}，正在群聊「{group}」里聊天。群成员有：{member_names}，还有{owner}。\n\
                  以下是你的人设资料：\n{persona}\n\n\
-                 要求：以{name}的身份自然接话，1-2 句，口语化；不要使用 Markdown；不要解释你是 AI；不要代替别人说话。"
+                 要求：以{name}的身份自然接话，1-2 句，口语化；不要使用 Markdown；不要解释你是 AI；不要代替别人说话。{memory_block}"
             );
             let messages = vec![
                 json!({ "role": "system", "content": system }),

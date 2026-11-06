@@ -836,6 +836,144 @@ fn commit_draft(state: &AppState, body: &Value) -> Result<Value, String> {
         "series": draft.get("series").and_then(Value::as_str).unwrap_or("") } }))
 }
 
+
+fn groups_index_file(state: &AppState) -> PathBuf {
+    state.paths.data.join("groups.json")
+}
+
+fn read_groups_index(state: &AppState) -> Value {
+    std::fs::read_to_string(groups_index_file(state))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| json!({ "groups": [] }))
+}
+
+fn write_groups_index(state: &AppState, value: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    std::fs::write(groups_index_file(state), text).map_err(|e| e.to_string())
+}
+
+fn group_dir(state: &AppState, gid: &str) -> PathBuf {
+    state.paths.data.join("groups").join(gid)
+}
+
+fn read_group_members(state: &AppState, gid: &str) -> Vec<String> {
+    let path = group_dir(state, gid).join("members.json");
+    let from_file = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| {
+            value.get("members").and_then(Value::as_array).map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        item.as_str()
+                            .map(str::to_string)
+                            .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))
+                    })
+                    .collect::<Vec<_>>()
+            })
+        });
+    match from_file {
+        Some(members) => members,
+        None => characters(state)
+            .into_iter()
+            .filter_map(|c| c.get("id").and_then(Value::as_str).map(str::to_string))
+            .collect(),
+    }
+}
+
+fn write_group_members(state: &AppState, gid: &str, members: &[String]) -> Result<(), String> {
+    let dir = group_dir(state, gid);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&json!({ "members": members }))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("members.json"), text).map_err(|e| e.to_string())
+}
+
+fn group_value(state: &AppState, gid: &str) -> Option<Value> {
+    read_groups_index(state)
+        .get("groups")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("id").and_then(Value::as_str) == Some(gid))
+                .cloned()
+        })
+}
+
+fn update_group_value(state: &AppState, gid: &str, update: impl FnOnce(&mut Value)) -> Result<(), String> {
+    let mut index = read_groups_index(state);
+    if let Some(list) = index.get_mut("groups").and_then(Value::as_array_mut) {
+        if let Some(item) = list
+            .iter_mut()
+            .find(|item| item.get("id").and_then(Value::as_str) == Some(gid))
+        {
+            update(item);
+        }
+    }
+    write_groups_index(state, &index)
+}
+
+fn group_detail_value(state: &AppState, gid: &str) -> Value {
+    let cfg = state.config();
+    let members: Vec<Value> = read_group_members(state, gid)
+        .into_iter()
+        .filter_map(|id| {
+            let (name, _) = find_character(state, &id)?;
+            Some(json!({
+                "userId": id,
+                "nickname": name,
+                "role": "member",
+                "level": 1,
+                "is_me": false,
+                "title": "",
+            }))
+        })
+        .chain(std::iter::once(json!({
+            "userId": cfg.qq.owner_id.parse::<i64>().unwrap_or(10001).to_string(),
+            "nickname": cfg.qq.server.owner_nickname,
+            "role": "owner",
+            "level": 1,
+            "is_me": true,
+            "title": "",
+        })))
+        .collect();
+    let group = group_value(state, gid).unwrap_or_else(|| json!({}));
+    json!({
+        "ok": true,
+        "groupId": gid,
+        "groupName": group.get("name").and_then(Value::as_str).unwrap_or("群聊"),
+        "member_count": members.len(),
+        "members": members,
+        "mute_all": group.get("mute_all").and_then(Value::as_bool).unwrap_or(false),
+        "searchable": group.get("searchable").and_then(Value::as_bool).unwrap_or(true),
+        "announce": group.get("announce").cloned().unwrap_or(json!({})),
+    })
+}
+
+fn group_files_index(state: &AppState, gid: &str) -> PathBuf {
+    group_dir(state, gid).join("files.json")
+}
+
+fn read_group_files(state: &AppState, gid: &str) -> Vec<Value> {
+    std::fs::read_to_string(group_files_index(state, gid))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_group_files(state: &AppState, gid: &str, files: &[Value]) -> Result<(), String> {
+    let dir = group_dir(state, gid);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(
+        group_files_index(state, gid),
+        serde_json::to_string_pretty(files).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn query_params(url: &str) -> HashMap<String, String> {
     let Some((_, query)) = url.split_once('?') else {
         return HashMap::new();
@@ -980,40 +1118,181 @@ pub fn api_request(
     if path == "/api/groups/detail" {
         let params = query_params(&url);
         let gid = params.get("groupId").or_else(|| params.get("group_id")).cloned().unwrap_or_default();
-        let cfg = state.config();
-        let members: Vec<Value> = characters(&state)
-            .into_iter()
-            .map(|c| {
-                let id = c.get("id").and_then(Value::as_str).unwrap_or("");
-                json!({
-                    "userId": id,
-                    "nickname": c.get("name").and_then(Value::as_str).unwrap_or("角色"),
-                    "role": "member",
-                    "level": 1,
-                    "is_me": false,
-                    "title": "",
-                })
+        return ApiOut { status: 200, body: group_detail_value(&state, &gid) };
+    }
+
+    if path == "/api/groups/create" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let name = payload.get("name").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if name.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "群名不能为空" }) };
+        }
+        let mut index = read_groups_index(&state);
+        let list = index.get_mut("groups").and_then(Value::as_array_mut);
+        let Some(list) = list else {
+            return ApiOut { status: 500, body: json!({ "ok": false, "error": "群数据格式错误" }) };
+        };
+        let next = list
+            .iter()
+            .filter_map(|item| item.get("id").and_then(Value::as_str)?.parse::<u64>().ok())
+            .max()
+            .unwrap_or(8800000)
+            + 1;
+        let gid = next.to_string();
+        let mut members: Vec<String> = payload
+            .get("members")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        item.as_u64().map(|v| v.to_string())
+                            .or_else(|| item.as_str().map(str::to_string))
+                    })
+                    .collect()
             })
-            .chain(std::iter::once(json!({
-                "userId": cfg.qq.owner_id.parse::<i64>().unwrap_or(10001).to_string(),
-                "nickname": cfg.qq.server.owner_nickname,
-                "role": "owner",
-                "level": 1,
-                "is_me": true,
-                "title": "",
-            })))
-            .collect();
-        return ApiOut { status: 200, body: json!({
-            "ok": true,
-            "groupId": gid,
-            "groupName": groups(&state).iter().find_map(|g| {
-                (g.get("id").and_then(Value::as_str) == Some(gid.as_str()))
-                    .then(|| g.get("name").and_then(Value::as_str).unwrap_or("群聊"))
-            }).unwrap_or("群聊"),
-            "member_count": members.len(),
-            "members": members,
+            .unwrap_or_default();
+        members.sort();
+        members.dedup();
+        list.push(json!({
+            "id": gid,
+            "name": name,
+            "avatar": "",
+            "created_ts": chrono::Utc::now().timestamp(),
             "mute_all": false,
-        })};
+            "searchable": true,
+        }));
+        if let Err(error) = write_groups_index(&state, &index) {
+            return ApiOut { status: 500, body: json!({ "ok": false, "error": error }) };
+        }
+        let _ = write_group_members(&state, &gid, &members);
+        return ApiOut { status: 200, body: group_detail_value(&state, &gid) };
+    }
+
+    if path == "/api/groups/manage" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let op = payload.get("op").and_then(Value::as_str).unwrap_or("");
+        let gid = payload.get("groupId").and_then(Value::as_str).unwrap_or("");
+        if gid.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "缺少群号" }) };
+        }
+        match op {
+            "rename" => {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or("").trim();
+                let _ = update_group_value(&state, gid, |item| item["name"] = json!(name));
+            }
+            "mute" => {
+                let on = payload.get("on").and_then(Value::as_bool).unwrap_or(false);
+                let _ = update_group_value(&state, gid, |item| item["mute_all"] = json!(on));
+            }
+            "searchable" => {
+                let on = payload.get("on").and_then(Value::as_bool).unwrap_or(true);
+                let _ = update_group_value(&state, gid, |item| item["searchable"] = json!(on));
+            }
+            "announce" => {
+                let text = payload.get("text").and_then(Value::as_str).unwrap_or("");
+                let _ = update_group_value(&state, gid, |item| {
+                    item["announce"] = json!({
+                        "text": text,
+                        "ts": chrono::Utc::now().timestamp(),
+                    })
+                });
+            }
+            "invite" => {
+                if let Some(user) = payload.get("userId").and_then(Value::as_str) {
+                    let mut members = read_group_members(&state, gid);
+                    if !members.iter().any(|id| id == user) {
+                        members.push(user.to_string());
+                        let _ = write_group_members(&state, gid, &members);
+                    }
+                }
+            }
+            "kick" => {
+                if let Some(user) = payload.get("userId").and_then(Value::as_str) {
+                    let mut members = read_group_members(&state, gid);
+                    members.retain(|id| id != user);
+                    let _ = write_group_members(&state, gid, &members);
+                }
+            }
+            "delete" => {
+                let mut index = read_groups_index(&state);
+                if let Some(list) = index.get_mut("groups").and_then(Value::as_array_mut) {
+                    list.retain(|item| item.get("id").and_then(Value::as_str) != Some(gid));
+                }
+                let _ = write_groups_index(&state, &index);
+                let src = group_dir(&state, gid);
+                let dst = state.paths.backups.join("deleted_groups").join(gid);
+                if let Some(parent) = dst.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::rename(src, dst);
+                return ApiOut { status: 200, body: json!({ "ok": true, "deleted": true }) };
+            }
+            _ => {}
+        }
+        return ApiOut { status: 200, body: group_detail_value(&state, gid) };
+    }
+
+    if path == "/api/groups/upload" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let gid = payload.get("groupId").and_then(Value::as_str).unwrap_or("");
+        let name = payload.get("name").and_then(Value::as_str).unwrap_or("file");
+        let data = payload.get("data").and_then(Value::as_str).unwrap_or("");
+        if gid.is_empty() || data.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "缺少群号或文件数据" }) };
+        }
+        let (_, encoded) = data.split_once(',').unwrap_or(("", data));
+        let Ok(bytes) = BASE64.decode(encoded) else {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "文件解码失败" }) };
+        };
+        let safe_name = name.rsplit('/').next().unwrap_or("file").replace(['/', '\\'], "_");
+        let stamp = chrono::Utc::now().timestamp_millis();
+        let stored = format!("{stamp}-{safe_name}");
+        let dir = group_dir(&state, gid).join("files");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Err(error) = std::fs::write(dir.join(&stored), &bytes) {
+            return ApiOut { status: 500, body: json!({ "ok": false, "error": error.to_string() }) };
+        }
+        let mut files = read_group_files(&state, gid);
+        let id = stamp.to_string();
+        files.push(json!({
+            "id": id,
+            "name": safe_name,
+            "size": bytes.len(),
+            "ts": chrono::Utc::now().timestamp(),
+            "stored": stored,
+            "url": format!("starlit://local/groups/{gid}/files/{stored}"),
+        }));
+        let _ = write_group_files(&state, gid, &files);
+        return ApiOut { status: 200, body: json!({ "ok": true, "file_id": id }) };
+    }
+
+    if path == "/api/groups/files" {
+        let params = query_params(&url);
+        let gid = params.get("groupId").cloned().unwrap_or_default();
+        let files = read_group_files(&state, &gid);
+        return ApiOut { status: 200, body: json!({ "ok": true, "files": files }) };
+    }
+
+    if path == "/api/groups/files/delete" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let gid = payload.get("groupId").and_then(Value::as_str).unwrap_or("");
+        let file_id = payload.get("file_id").and_then(Value::as_str).unwrap_or("");
+        let mut files = read_group_files(&state, gid);
+        if let Some(pos) = files.iter().position(|item| {
+            item.get("id").and_then(Value::as_str) == Some(file_id)
+        }) {
+            let file = files.remove(pos);
+            if let Some(stored) = file.get("stored").and_then(Value::as_str) {
+                let _ = std::fs::remove_file(group_dir(&state, gid).join("files").join(stored));
+            }
+            let _ = write_group_files(&state, gid, &files);
+        }
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
     }
 
     if path == "/api/profile" {
