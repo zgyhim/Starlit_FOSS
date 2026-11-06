@@ -409,15 +409,7 @@ pub fn send_message(
         Ok(conn.last_insert_rowid())
     })?;
 
-    let now = chrono::Utc::now().timestamp();
-    let _ = state.db.with(|conn| {
-        conn.execute(
-            "INSERT INTO kv (key, value, updated_at) VALUES ('autonomy.last_user_ts', ?1, ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-            rusqlite::params![now.to_string()],
-        )?;
-        Ok(())
-    });
+    crate::autonomy::on_user_message(&state);
 
     let reply_text = text.clone();
     let reply_conversation = payload.conversation.clone();
@@ -678,14 +670,6 @@ fn settings_body(cfg: &crate::config::Config) -> Value {
             "api_key_set": !cfg.llm.api_key.trim().is_empty(),
             "api_key_hint": mask_key(&cfg.llm.api_key),
         },
-        "tts": {
-            "mode": if cfg.tts.provider.is_empty() { "off" } else { &cfg.tts.provider },
-            "endpoint": cfg.tts.endpoint,
-            "model": "",
-            "max_chars": 800,
-            "api_key_set": false,
-            "api_key_hint": "",
-        },
         "setup": { "required": false },
     })
 }
@@ -712,17 +696,6 @@ fn update_settings(state: &AppState, body: Option<String>) -> Result<Value, Stri
             if !value.trim().is_empty() {
                 cfg.llm.api_key = value.trim().to_string();
             }
-        }
-    }
-    if let Some(tts) = payload.get("tts") {
-        if let Some(value) = tts.get("mode").and_then(Value::as_str) {
-            cfg.tts.provider = match value {
-                "local" | "cloud" => value.to_string(),
-                _ => String::new(),
-            };
-        }
-        if let Some(value) = tts.get("endpoint").and_then(Value::as_str) {
-            cfg.tts.endpoint = value.trim().to_string();
         }
     }
     crate::paths::write_config(&state.paths.config_file(), &cfg)?;
