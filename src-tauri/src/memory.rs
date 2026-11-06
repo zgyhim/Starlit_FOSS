@@ -253,16 +253,27 @@ pub fn list(
                 |row| row.get(0),
             )?
         };
-        let sql = format!(
+        let sql = if query.trim().is_empty() {
             "SELECT m.id, m.text, m.ts, m.updated_at, m.version,
                     COALESCE(mm.pinned, 0), COALESCE(mm.category, 'auto'), mm.corrected_at
              FROM memories m
              LEFT JOIN memory_meta mm
                ON mm.source = 'memory' AND mm.local_id = CAST(m.id AS TEXT)
-             WHERE m.status = 'active' AND {filter}
+             WHERE m.status = 'active'
+             ORDER BY COALESCE(mm.pinned, 0) DESC, m.ts DESC
+             LIMIT ?1 OFFSET ?2"
+                .to_string()
+        } else {
+            "SELECT m.id, m.text, m.ts, m.updated_at, m.version,
+                    COALESCE(mm.pinned, 0), COALESCE(mm.category, 'auto'), mm.corrected_at
+             FROM memories m
+             LEFT JOIN memory_meta mm
+               ON mm.source = 'memory' AND mm.local_id = CAST(m.id AS TEXT)
+             WHERE m.status = 'active' AND m.text LIKE ?1
              ORDER BY COALESCE(mm.pinned, 0) DESC, m.ts DESC
              LIMIT ?2 OFFSET ?3"
-        );
+                .to_string()
+        };
         let mut stmt = conn.prepare(&sql)?;
         let map = |row: &rusqlite::Row<'_>| {
             Ok(json!({

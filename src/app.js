@@ -3196,15 +3196,11 @@
     m.error = '';
     renderMemories();
 
-    let url = `/api/memories?peer_id=${encodeURIComponent(peerId)}` +
-      `&offset=${offset}&limit=${MEMORY_PAGE_SIZE}`;
-    if (query) url += `&q=${encodeURIComponent(query)}`;
     try {
-      const res = await apiRequest(url, { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
+      const data = await api.listMemories(query || null, offset, MEMORY_PAGE_SIZE);
       if (!memoryRequestCurrent(requestId, peerId, query)) return;
-      if (!res.ok || data.ok !== true || !Array.isArray(data.items)) {
-        throw new Error(memoryApiError(data, res, '回忆加载失败'));
+      if (!data || !Array.isArray(data.items)) {
+        throw new Error('回忆加载失败');
       }
       const page = data.items.filter((item) =>
         item && typeof item === 'object' && item.id !== undefined && item.id !== null);
@@ -3367,16 +3363,22 @@
     const mutationId = beginMemoryMutation('save');
     let saved = false;
     try {
-      const res = await apiRequest('/api/memories', {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!memoryMutationCurrent(peerId, mutationId)) return;
-      if (!res.ok || data.ok !== true) {
-        throw new Error(memoryApiError(data, res, '保存失败'));
+      if (editing) {
+        await api.updateMemory({
+          id: editing.id,
+          text,
+          category: body.category,
+          pinned: body.pinned,
+          corrected: true,
+        });
+      } else {
+        await api.createMemory({
+          text,
+          category: body.category,
+          pinned: body.pinned,
+        });
       }
+      if (!memoryMutationCurrent(peerId, mutationId)) return;
       saved = true;
     } catch (e) {
       if (memoryMutationCurrent(peerId, mutationId)) {
@@ -3411,21 +3413,8 @@
     const mutationId = beginMemoryMutation('pin');
     let changed = false;
     try {
-      const res = await apiRequest('/api/memories', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          peer_id: peerId,
-          source: item.source,
-          id: String(item.id),
-          pinned,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
+      await api.updateMemory({ id: item.id, pinned });
       if (!memoryMutationCurrent(peerId, mutationId)) return;
-      if (!res.ok || data.ok !== true) {
-        throw new Error(memoryApiError(data, res, '置顶操作失败'));
-      }
       changed = true;
     } catch (e) {
       if (memoryMutationCurrent(peerId, mutationId)) {
@@ -3450,20 +3439,8 @@
     const mutationId = beginMemoryMutation('delete');
     let deleted = false;
     try {
-      const res = await apiRequest('/api/memories', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          peer_id: peerId,
-          source: item.source,
-          id: String(item.id),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
+      await api.deleteMemory(item.id);
       if (!memoryMutationCurrent(peerId, mutationId)) return;
-      if (!res.ok || data.ok !== true) {
-        throw new Error(memoryApiError(data, res, '删除失败'));
-      }
       deleted = true;
     } catch (e) {
       if (memoryMutationCurrent(peerId, mutationId)) {
