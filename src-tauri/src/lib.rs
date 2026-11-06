@@ -1,9 +1,11 @@
 mod api;
+mod autonomy;
 mod config;
 mod db;
 mod ipc;
 mod llm;
 mod lock;
+mod memory;
 mod logging;
 mod media;
 mod paths;
@@ -99,6 +101,7 @@ pub fn run() {
             let log_file = paths.log_file();
             let paths_for_media = paths.clone();
             app.manage(state::AppState::new(paths, config, db, instance_lock));
+            autonomy::spawn(app.handle().clone());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -159,6 +162,10 @@ pub fn run() {
                 if pending || api::auto_clear_enabled(&state) {
                     let _ = media::clear_cache(&state.paths);
                 }
+                let _ = state.db.with(|conn| {
+                    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+                    Ok(())
+                });
                 lock::release(&state.paths.root);
             }
         }
