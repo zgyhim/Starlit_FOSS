@@ -12598,14 +12598,18 @@
   function waitForMediaReady(onProgress, timeoutMs = 300000) {
     return new Promise((resolve) => {
       let settled = false;
-      const finish = () => {
+      const finish = (result) => {
         if (settled) return;
         settled = true;
-        onProgress?.(1, 1);
-        resolve(true);
+        resolve(result);
       };
       if (window.__TAURI__?.event) {
-        window.__TAURI__.event.listen('media:ready', finish);
+        window.__TAURI__.event.listen('media:ready', () => {
+          api.mediaStatus().then((info) => {
+            if (info?.error) finish({ ok: false, error: info.error });
+            else finish({ ok: true });
+          }).catch(() => finish({ ok: true }));
+        });
       }
       const started = Date.now();
       const poll = async () => {
@@ -12613,9 +12617,12 @@
         try {
           const info = await api.mediaStatus();
           if (info) onProgress?.(Number(info.done) || 0, Number(info.total) || 0);
-          if (info?.ready) return finish();
+          if (info?.error) return finish({ ok: false, error: info.error });
+          if (info?.ready) return finish({ ok: true });
         } catch (e) { /* 继续等待 */ }
-        if (Date.now() - started > timeoutMs) return finish();
+        if (Date.now() - started > timeoutMs) {
+          return finish({ ok: false, error: '加载超时，请检查资源文件是否完整后重试。' });
+        }
         setTimeout(poll, 300);
       };
       poll();
@@ -12624,11 +12631,30 @@
 
   async function bootSequence() {
     const bar = document.getElementById('bootBar');
+    const errorBox = document.getElementById('bootError');
+    const exitBtn = document.getElementById('bootExit');
+    errorBox?.classList.add('hidden');
+    exitBtn?.classList.add('hidden');
     setBootSplash(true);
-    await waitForMediaReady((done, total) => {
+    const result = await waitForMediaReady((done, total) => {
       if (!bar) return;
       bar.style.width = total > 0 ? `${Math.min(100, Math.round(done / total * 100))}%` : '0%';
     });
+    if (!result.ok) {
+      if (bar) bar.style.width = '0%';
+      if (errorBox) {
+        errorBox.textContent = '初始化失败：' + (result.error || '未知错误');
+        errorBox.classList.remove('hidden');
+      }
+      if (exitBtn) {
+        exitBtn.classList.remove('hidden');
+        exitBtn.addEventListener('click', () => {
+          window.__TAURI__?.core.invoke('window_control', { action: 'close' })
+            .catch(() => window.close());
+        }, { once: true });
+      }
+      return;
+    }
     setBootSplash(false);
     connect();
   }

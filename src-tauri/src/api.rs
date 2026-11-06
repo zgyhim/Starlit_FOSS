@@ -602,6 +602,7 @@ pub fn media_status(state: State<'_, AppState>) -> Value {
         "ready": state.media_ready.load(std::sync::atomic::Ordering::Relaxed),
         "done": state.media_done.load(std::sync::atomic::Ordering::Relaxed),
         "total": state.media_total.load(std::sync::atomic::Ordering::Relaxed),
+        "error": state.media_error.lock().map(|e| e.clone()).unwrap_or_default(),
     })
 }
 

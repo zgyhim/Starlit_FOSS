@@ -5900,3 +5900,20 @@ html.desktop-window .conv.active { background: var(--brand-soft); }
   height: 100%;
   background: var(--brand);
 }
+.boot-error {
+  max-width: 460px;
+  color: #c0392b;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.boot-exit {
+  padding: 6px 18px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}

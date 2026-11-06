@@ -16,10 +16,17 @@ pub struct AppState {
     pub media_ready: AtomicBool,
     pub media_done: AtomicUsize,
     pub media_total: AtomicUsize,
+    pub media_error: Mutex<String>,
+    pub _instance_lock: crate::lock::InstanceLock,
 }
 
 impl AppState {
-    pub fn new(paths: Paths, config: Config, db: Db) -> Self {
+    pub fn new(
+        paths: Paths,
+        config: Config,
+        db: Db,
+        instance_lock: crate::lock::InstanceLock,
+    ) -> Self {
         Self {
             paths,
             config: RwLock::new(config),
@@ -29,6 +36,8 @@ impl AppState {
             media_ready: AtomicBool::new(false),
             media_done: AtomicUsize::new(0),
             media_total: AtomicUsize::new(0),
+            media_error: Mutex::new(String::new()),
+            _instance_lock: instance_lock,
         }
     }
 
