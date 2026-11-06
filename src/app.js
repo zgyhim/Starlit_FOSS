@@ -12595,12 +12595,13 @@
     if (splash) splash.classList.toggle('is-hidden', !visible);
   }
 
-  function waitForMediaReady(timeoutMs = 300000) {
+  function waitForMediaReady(onProgress, timeoutMs = 300000) {
     return new Promise((resolve) => {
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
+        onProgress?.(1, 1);
         resolve(true);
       };
       if (window.__TAURI__?.event) {
@@ -12611,18 +12612,23 @@
         if (settled) return;
         try {
           const info = await api.mediaStatus();
+          if (info) onProgress?.(Number(info.done) || 0, Number(info.total) || 0);
           if (info?.ready) return finish();
         } catch (e) { /* 继续等待 */ }
         if (Date.now() - started > timeoutMs) return finish();
-        setTimeout(poll, 400);
+        setTimeout(poll, 300);
       };
       poll();
     });
   }
 
   async function bootSequence() {
+    const bar = document.getElementById('bootBar');
     setBootSplash(true);
-    await waitForMediaReady();
+    await waitForMediaReady((done, total) => {
+      if (!bar) return;
+      bar.style.width = total > 0 ? `${Math.min(100, Math.round(done / total * 100))}%` : '0%';
+    });
     setBootSplash(false);
     connect();
   }

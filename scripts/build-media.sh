@@ -25,7 +25,7 @@ pack groups.tar.zst groups
 
 cd "$OUT"
 python3 - <<'PY'
-import hashlib, json, os
+import hashlib, json, os, subprocess
 entries = [
   ("avatars.tar.zst", "data", "startup", "avatars,character_avatars"),
   ("groups.tar.zst", "data", "startup", "groups"),
@@ -40,9 +40,17 @@ for name, target, scope, content in entries:
     with open(name, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
+    listing = subprocess.run(["tar", "-tvf", name], capture_output=True, text=True)
+    total = 0
+    files = 0
+    for line in listing.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 6 and parts[0].startswith("-"):
+            total += int(parts[2])
+            files += 1
     out.append({"name": name, "target": target, "scope": scope,
                 "sha256": h.hexdigest(), "bytes": os.path.getsize(name),
-                "content": content})
+                "uncompressed": total, "files": files, "content": content})
 json.dump({"version": 1, "archives": out},
           open("manifest.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 print("manifest written")
