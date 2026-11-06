@@ -212,6 +212,9 @@
     settingsTtsTestState: $('#settingsTtsTestState'),
     settingsAddCharacter: $('#settingsAddCharacter'),
     settingsBackup: $('#settingsBackup'),
+    settingsCacheState: $('#settingsCacheState'),
+    settingsClearCache: $('#settingsClearCache'),
+    settingsAutoClearCache: $('#settingsAutoClearCache'),
 
     characterMask: $('#characterMask'),
     characterClose: $('#characterClose'),
@@ -9643,6 +9646,7 @@
     revealSettings();
     loadServiceSettings();
     loadDiagnostics();
+    loadMediaCacheInfo();
   }
 
   function setSettingsNotice(message = '', kind = 'error') {
@@ -10555,6 +10559,41 @@
     if (e.key === 'Enter') { e.preventDefault(); saveTtsSettings(); }
   });
   els.settingsAddCharacter.addEventListener('click', openCharacterModal);
+  async function loadMediaCacheInfo() {
+    try {
+      const info = await api.mediaCacheInfo();
+      const mb = (Number(info.bytes || 0) / 1048576).toFixed(1);
+      els.settingsAutoClearCache.checked = !!info.autoClear;
+      els.settingsCacheState.textContent = info.pending
+        ? '已安排退出后清理'
+        : `${info.archives} 个资源包 · ${mb} MB`;
+    } catch (e) {
+      els.settingsCacheState.textContent = '读取缓存状态失败';
+    }
+  }
+
+  els.settingsClearCache.addEventListener('click', async () => {
+    try {
+      await api.clearMediaCache();
+      els.settingsCacheState.textContent = '已安排退出后清理';
+      toast('将在退出星伴时清理解压缓存');
+    } catch (e) {
+      toast('安排清理失败：' + (e?.message || e));
+    }
+  });
+
+  els.settingsAutoClearCache.addEventListener('change', async () => {
+    const enabled = !!els.settingsAutoClearCache.checked;
+    try {
+      await api.setMediaAutoClear(enabled);
+      toast(enabled ? '已开启：退出时自动删除解压缓存' : '已关闭自动清理');
+      loadMediaCacheInfo();
+    } catch (e) {
+      els.settingsAutoClearCache.checked = !enabled;
+      toast('保存失败：' + (e?.message || e));
+    }
+  });
+
   els.settingsBackup.addEventListener('click', downloadBackup);
   els.characterClose.addEventListener('click', closeCharacterModal);
   els.characterCancel.addEventListener('click', closeCharacterModal);

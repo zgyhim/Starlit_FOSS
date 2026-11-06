@@ -1546,6 +1546,16 @@
         <div><strong>手机与电脑同步</strong><span>同一 Wi-Fi 自动发现；发送前自动备份，无需云端</span></div>
         <button class="ghost" id="settingsLanSync" type="button">打开</button>
       </div>
+      <section class="update-settings" id="settingsCacheSection" aria-label="本地缓存">
+        <div class="setting-row">
+          <div><strong>解压缓存</strong><span id="settingsCacheState">正在读取…</span></div>
+          <button class="ghost" id="settingsClearCache" type="button">清理（退出生效）</button>
+        </div>
+        <label class="setting-row" for="settingsAutoClearCache">
+          <div><strong>退出时自动删除解压缓存</strong><span>下次启动会重新解压资源包，首次打开会变慢</span></div>
+          <span class="switch"><input type="checkbox" id="settingsAutoClearCache" aria-label="退出时自动删除解压缓存"><i></i></span>
+        </label>
+      </section>
       <section class="update-settings hidden" id="settingsUpdateRow" aria-label="软件更新">
         <div class="setting-row">
           <div><strong>软件更新</strong><span id="settingsUpdateState">仅检查公开版本信息，不会上传聊天或个人配置</span></div>

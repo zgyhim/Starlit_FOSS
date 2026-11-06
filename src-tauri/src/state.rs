@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, RwLock};
 
 use crate::config::Config;
@@ -9,6 +10,8 @@ pub struct AppState {
     pub config: RwLock<Config>,
     pub db: Db,
     pub started_at: i64,
+    /// 本次退出时强制清理解压缓存。
+    pub pending_media_clear: AtomicBool,
 }
 
 impl AppState {
@@ -18,6 +21,7 @@ impl AppState {
             config: RwLock::new(config),
             db,
             started_at: chrono::Utc::now().timestamp(),
+            pending_media_clear: AtomicBool::new(false),
         }
     }
 

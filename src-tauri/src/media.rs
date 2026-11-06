@@ -36,9 +36,47 @@ fn looks_extracted(paths: &Paths, entry: &ArchiveEntry) -> bool {
     marker_path(paths, &entry.sha256).is_file()
 }
 
+fn record_path(paths: &Paths, sha: &str) -> PathBuf {
+    paths.root.join(".cache").join("media").join(format!("{sha}.files"))
+}
+
+/// 读取归档条目，生成“解压产物清单”，供退出清理时精确删除。
+fn write_file_record(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
+    let record = record_path(paths, &entry.sha256);
+    if record.is_file() {
+        return Ok(());
+    }
+    let archive = paths.resources.join("media").join(&entry.name);
+    let file = fs::File::open(&archive).map_err(|e| e.to_string())?;
+    let decoder = zstd::Decoder::new(io::BufReader::new(file)).map_err(|e| e.to_string())?;
+    let mut tar = tar::Archive::new(decoder);
+    let mut lines = String::new();
+    for item in tar.entries().map_err(|e| e.to_string())? {
+        let item = item.map_err(|e| e.to_string())?;
+        if !item.header().entry_type().is_file() {
+            continue;
+        }
+        let path = item.path().map_err(|e| e.to_string())?;
+        if path.is_absolute()
+            || path.components().any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        lines.push_str(&entry.target);
+        lines.push('/');
+        lines.push_str(&path.to_string_lossy());
+        lines.push('\n');
+    }
+    if let Some(parent) = record.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(record, lines).map_err(|e| e.to_string())
+}
+
 /// 解压单个归档；失败时保留部分文件但不写缓存标记，下次重试。
 fn extract_one(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
     if looks_extracted(paths, entry) {
+        let _ = write_file_record(paths, entry);
         return Ok(());
     }
     let archive = paths.resources.join("media").join(&entry.name);
@@ -68,6 +106,8 @@ fn extract_one(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> {
         item.unpack_in(&base)
             .map_err(|e| format!("写入 {} 失败: {e}", path.display()))?;
     }
+
+    let _ = write_file_record(paths, entry);
 
     let marker = marker_path(paths, &entry.sha256);
     if let Some(parent) = marker.parent() {
@@ -109,6 +149,62 @@ pub fn extract_background(paths: &Paths) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// 删除所有由资源包解压出来的文件，保留用户自己上传的内容。
+pub fn clear_cache(paths: &Paths) -> Result<(), String> {
+    let cache = paths.root.join(".cache").join("media");
+    let Ok(entries) = fs::read_dir(&cache) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("files") {
+            continue;
+        }
+        if let Ok(text) = fs::read_to_string(&path) {
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.contains("..") {
+                    continue;
+                }
+                let target = paths.root.join(line);
+                if target.starts_with(&paths.root) && target.is_file() {
+                    let _ = fs::remove_file(target);
+                }
+            }
+        }
+    }
+    if let Ok(entries) = fs::read_dir(&cache) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    Ok(())
+}
+
+pub fn cache_stats(paths: &Paths) -> (usize, u64) {
+    let cache = paths.root.join(".cache").join("media");
+    let Ok(entries) = fs::read_dir(&cache) else {
+        return (0, 0);
+    };
+    let mut archives = 0;
+    let mut bytes = 0u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("files") {
+            archives += 1;
+            if let Ok(text) = fs::read_to_string(&path) {
+                for line in text.lines() {
+                    let target = paths.root.join(line.trim());
+                    if let Ok(meta) = fs::metadata(&target) {
+                        bytes += meta.len();
+                    }
+                }
+            }
+        }
+    }
+    (archives, bytes)
 }
 
 #[allow(dead_code)]
