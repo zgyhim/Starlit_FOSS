@@ -16,8 +16,20 @@ mod sticker;
 
 use tauri::Manager;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+    let app = builder
         .register_uri_scheme_protocol("starlit", |ctx, request| {
             use tauri::Manager;
 
@@ -71,13 +83,6 @@ pub fn run() {
                 .expect("valid response")
         })
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
         .setup(|app| {
             let paths = paths::Paths::resolve(app.handle())?;
             paths.ensure()?;

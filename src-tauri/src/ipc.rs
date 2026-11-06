@@ -34,25 +34,41 @@ pub struct WindowState {
 #[tauri::command]
 pub fn window_control(window: tauri::WebviewWindow, action: String) -> Result<bool, String> {
     match action.as_str() {
-        "minimize" => window.minimize().map_err(|e| e.to_string())?,
-        "maximize" => window.maximize().map_err(|e| e.to_string())?,
-        "unmaximize" => window.unmaximize().map_err(|e| e.to_string())?,
         "close" => window.close().map_err(|e| e.to_string())?,
-        _ => return Err(format!("未知窗口操作: {action}")),
+        #[cfg(desktop)]
+        "minimize" => window.minimize().map_err(|e| e.to_string())?,
+        #[cfg(desktop)]
+        "maximize" => window.maximize().map_err(|e| e.to_string())?,
+        #[cfg(desktop)]
+        "unmaximize" => window.unmaximize().map_err(|e| e.to_string())?,
+        _ => return Err(format!("当前平台不支持窗口操作: {action}")),
     }
     Ok(true)
 }
 
 #[tauri::command]
 pub fn window_state(window: tauri::WebviewWindow) -> Result<WindowState, String> {
-    Ok(WindowState {
-        maximized: window.is_maximized().map_err(|e| e.to_string())?,
-    })
+    #[cfg(desktop)]
+    let maximized = window.is_maximized().map_err(|e| e.to_string())?;
+    #[cfg(mobile)]
+    let maximized = {
+        let _ = &window;
+        false
+    };
+    Ok(WindowState { maximized })
 }
 
 #[tauri::command]
 pub fn open_data_dir(state: State<'_, AppState>) -> Result<(), String> {
-    open::that(&state.paths.root).map_err(|e| format!("打开数据目录失败: {e}"))
+    #[cfg(desktop)]
+    {
+        open::that(&state.paths.root).map_err(|e| format!("打开数据目录失败: {e}"))
+    }
+    #[cfg(mobile)]
+    {
+        let _ = state;
+        Err("Android 暂不支持直接打开数据目录".into())
+    }
 }
 
 #[tauri::command]

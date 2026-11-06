@@ -25,3 +25,6 @@ Thumbs.db
 
 # 本地媒体归档（仓库中提交分片）
 resources/media/*.tar.zst
+
+# Tauri Android staging
+src-tauri/gen/android/app/src/main/assets/_up_/

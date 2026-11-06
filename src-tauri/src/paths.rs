@@ -17,7 +17,7 @@ impl Paths {
     pub fn resolve(app: &tauri::AppHandle) -> Result<Self, String> {
         let root = match std::env::var_os("STARLIT_DATA_ROOT") {
             Some(v) if !v.is_empty() => PathBuf::from(v),
-            _ => data_dir()?.join("starlit-desktop"),
+            _ => default_root(app)?,
         };
         let resources = match std::env::var_os("STARLIT_RESOURCE_ROOT") {
             Some(v) if !v.is_empty() => PathBuf::from(v),
@@ -173,6 +173,22 @@ pub fn write_config(file: &Path, cfg: &Config) -> Result<(), String> {
     fs::rename(&tmp, file).map_err(|e| format!("替换配置失败: {e}"))
 }
 
+fn default_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(mobile)]
+    {
+        use tauri::Manager;
+        return app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("无法确定应用数据目录: {e}"));
+    }
+    #[cfg(desktop)]
+    {
+        let _ = app;
+        data_dir().map(|dir| dir.join("starlit-desktop"))
+    }
+}
+
 fn data_dir() -> Result<PathBuf, String> {
     if cfg!(target_os = "windows") {
         if let Some(v) = std::env::var_os("APPDATA") {
@@ -195,6 +211,7 @@ fn data_dir() -> Result<PathBuf, String> {
 
 fn resolve_resources(app: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;
+    #[cfg(desktop)]
     if cfg!(debug_assertions) {
         let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources");
         if dev.is_dir() {

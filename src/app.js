@@ -5461,14 +5461,18 @@
     return row;
   }
 
-  // 资源地址：Tauri 自定义协议由 Rust 端映射到 dataRoot，不再携带令牌。
+  // 资源地址：桌面用 starlit://，Android WebView 访问自定义协议需走 http://<scheme>.localhost
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  function localAsset(path) {
+    return IS_ANDROID ? 'http://starlit.localhost' + path : 'starlit://local' + path;
+  }
   function resolveAsset(url) {
     if (!url || typeof url !== 'string') return '';
-    if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('starlit://')) {
-      return url;
-    }
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    if (url.startsWith('starlit://local')) return localAsset(url.slice('starlit://local'.length));
+    if (url.startsWith('starlit://')) return url;
     if (url.startsWith('file://')) return '';
-    if (url.startsWith('/')) return 'starlit://local' + url;
+    if (url.startsWith('/')) return localAsset(url);
     return url;
   }
 
