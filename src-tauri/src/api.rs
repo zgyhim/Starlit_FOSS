@@ -1644,6 +1644,24 @@ pub fn api_request(
         return ApiOut { status: 200, body: json!({ "ok": true }) };
     }
 
+
+    if path == "/api/conversation/clear" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        if peer.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "缺少角色" }) };
+        }
+        let _ = state.db.with(|conn| {
+            conn.execute(
+                "DELETE FROM messages WHERE conversation_kind = 'Private' AND conversation_id = ?1",
+                rusqlite::params![peer],
+            )?;
+            Ok(())
+        });
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
+
     if path == "/api/profile" {
         let mut cfg = state.config();
         if method == "POST" {
