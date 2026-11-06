@@ -1090,13 +1090,8 @@
     els.settingsReplySpeed.addEventListener('change', async () => {
       const speed = els.settingsReplySpeed.value;
       try {
-        const res = await apiRequest('/api/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ behavior: { reply_speed: speed } }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+        const out = await api.saveSettings({ behavior: { reply_speed: speed } });
+        if (!out || out.ok === false) throw new Error(out?.error || '保存失败');
         toast(speed === 'instant' ? '已切换为瞬间回复' : '回复速度已更新');
       } catch (e) {
         toast('保存失败：' + (e?.message || e));
@@ -9881,24 +9876,11 @@
   async function loadServiceSettings(generation = null) {
     const seq = ++state.settingsRequestSeq;
     try {
-      const res = await apiRequest('/api/settings', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
+      const data = await api.getSettings();
       if (seq !== state.settingsRequestSeq) return null;
-      if (res.status === 404) {
-        state.serviceSettingsSupported = false;
-        setSettingsNotice('当前服务端不支持网页设置与初始化向导（404），请升级服务端后重试。', 'warning');
-        return null;
-      }
-      if (res.status === 403) {
-        setSettingsNotice('访问令牌缺失或不正确。请先在上方保存令牌，再重新检查初始化状态。');
-        if (state.everConnected) revealSettings();
-        return null;
-      }
-      if (!res.ok || !data.ok) {
-        const message = data.error || `服务端设置读取失败（HTTP ${res.status}）`;
-        setSettingsNotice(message);
+      if (!data || data.ok === false) {
+        setSettingsNotice('设置读取失败');
         revealSettings();
-        loadDiagnostics();
         return null;
       }
       state.serviceSettingsSupported = true;
@@ -10089,13 +10071,8 @@
     }
     els.settingsLlmSave.disabled = true;
     try {
-      const res = await apiRequest('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ llm }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+      const out = await api.saveSettings({ llm });
+      if (!out || out.ok === false) throw new Error(out?.error || '保存失败');
       applyLlmSettings(out.llm || llm);
       applySetup(out.setup);
       if (options.resetTestState !== false) resetDiagnosticTestState('llm');
@@ -10155,13 +10132,8 @@
     if (key) tts.api_key = key;
     els.settingsTtsSave.disabled = true;
     try {
-      const res = await apiRequest('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tts }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+      const out = await api.saveSettings({ tts });
+      if (!out || out.ok === false) throw new Error(out?.error || '保存失败');
       stopSpeech({ clearQueue: true, clearCache: true });
       applyTtsSettings(out.tts || tts);
       applySetup(out.setup);

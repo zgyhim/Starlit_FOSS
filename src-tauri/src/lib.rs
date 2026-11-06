@@ -164,6 +164,8 @@ pub fn run() {
             api::create_backup,
             api::restore_backup,
             api::generate_diary,
+            api::get_settings,
+            api::save_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

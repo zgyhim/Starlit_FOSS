@@ -43,6 +43,8 @@
     characterDraftGenerate: (name, avatar) =>
       invoke("character_draft_generate", { name, avatar }),
     diagnosticsTest: (target) => invoke("diagnostics_test", { target }),
+    getSettings: () => invoke("get_settings"),
+    saveSettings: (payload) => invoke("save_settings", { payload }),
     createBackup: () => invoke("create_backup"),
     restoreBackup: (data) => invoke("restore_backup", { data }),
     generateDiary: (peerId, day) => invoke("generate_diary", { peerId, day }),
