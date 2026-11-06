@@ -158,6 +158,13 @@ Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebV
 
 ---
 
+## 许可证
+
+本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 发布，完整条款见 [LICENSE](LICENSE)。
+
+- 修改、分发或通过网络提供服务时，需要以同一许可证开放对应源代码
+- 原版角色、人格与美术资源的版权仍归原作者及相应权利人，不因本项目许可证而改变
+
 ## 关于这个项目
 
 星伴 FOSS 是个人主导的本地优先项目，没有账号体系，也没有商业化计划。
