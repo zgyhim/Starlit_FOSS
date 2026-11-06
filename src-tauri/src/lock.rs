@@ -18,17 +18,9 @@ impl InstanceLock {
             root.join("data").join("companion.db.lock"),
             root.join("data").join("media.lock"),
         ];
-        for file in &files {
-            if !file.exists() {
-                continue;
-            }
-            if let Some(pid) = read_pid(file) {
-                if pid != process::id() && process_alive(pid) {
-                    return Err(LockError::Busy);
-                }
-            }
-            // 上个进程异常退出留下的锁：进程已不在，接管。
-            let _ = fs::remove_file(file);
+        // 君子锁：只要文件存在就视为被占用，不再根据 PID 判断死活。
+        if files.iter().any(|file| file.exists()) {
+            return Err(LockError::Busy);
         }
 
         let exe = std::env::current_exe()
@@ -67,21 +59,4 @@ impl Drop for InstanceLock {
             let _ = fs::remove_file(file);
         }
     }
-}
-
-fn read_pid(path: &Path) -> Option<u32> {
-    let text = fs::read_to_string(path).ok()?;
-    text.lines()
-        .find_map(|line| line.strip_prefix("pid="))
-        .and_then(|value| value.trim().parse().ok())
-}
-
-#[cfg(target_os = "linux")]
-fn process_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn process_alive(_pid: u32) -> bool {
-    true
 }
