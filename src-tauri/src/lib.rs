@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod db;
 mod ipc;
+mod llm;
 mod lock;
 mod logging;
 mod media;

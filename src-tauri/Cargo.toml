@@ -31,6 +31,8 @@ sha2 = "0.10.9"
 percent-encoding = "2.3.2"
 base64 = "0.23.1"
 tauri-plugin-dialog = "2.7.3"
+rand = "0.9.5"
+reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
 
 [profile.release]
 codegen-units = 1

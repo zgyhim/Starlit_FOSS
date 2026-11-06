@@ -372,7 +372,11 @@ fn parts_text(parts: &Value) -> String {
 }
 
 #[tauri::command]
-pub fn send_message(state: State<'_, AppState>, payload: SendPayload) -> Result<Message, String> {
+pub fn send_message(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    payload: SendPayload,
+) -> Result<Message, String> {
     let now = chrono::Utc::now().timestamp();
     let client_id = payload.client_id.clone().unwrap_or_default();
     let text = parts_text(&payload.parts);
@@ -404,6 +408,10 @@ pub fn send_message(state: State<'_, AppState>, payload: SendPayload) -> Result<
         )?;
         Ok(conn.last_insert_rowid())
     })?;
+
+    let reply_text = text.clone();
+    let reply_conversation = payload.conversation.clone();
+    crate::llm::spawn_reply(app, reply_conversation, id, reply_text);
 
     Ok(Message {
         id,
@@ -627,6 +635,72 @@ fn ok(mut body: Value) -> Value {
     body
 }
 
+fn mask_key(key: &str) -> String {
+    let key = key.trim();
+    if key.len() <= 4 {
+        return "****".into();
+    }
+    format!("****{}", &key[key.len() - 4..])
+}
+
+fn settings_body(cfg: &crate::config::Config) -> Value {
+    json!({
+        "llm": {
+            "base_url": cfg.llm.base_url,
+            "model": cfg.llm.model,
+            "reasoning_effort": "",
+            "api_key_set": !cfg.llm.api_key.trim().is_empty(),
+            "api_key_hint": mask_key(&cfg.llm.api_key),
+        },
+        "tts": {
+            "mode": if cfg.tts.provider.is_empty() { "off" } else { &cfg.tts.provider },
+            "endpoint": cfg.tts.endpoint,
+            "model": "",
+            "max_chars": 800,
+            "api_key_set": false,
+            "api_key_hint": "",
+        },
+        "setup": { "required": false },
+    })
+}
+
+fn update_settings(state: &AppState, body: Option<String>) -> Result<Value, String> {
+    let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+        .map_err(|e| format!("请求格式错误: {e}"))?;
+    let mut cfg = state.config();
+    if let Some(llm) = payload.get("llm") {
+        if let Some(value) = llm.get("base_url").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                cfg.llm.base_url = value.trim().to_string();
+            }
+        }
+        if let Some(value) = llm.get("model").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                cfg.llm.model = value.trim().to_string();
+            }
+        }
+        if let Some(value) = llm.get("api_key").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                cfg.llm.api_key = value.trim().to_string();
+            }
+        }
+    }
+    if let Some(tts) = payload.get("tts") {
+        if let Some(value) = tts.get("mode").and_then(Value::as_str) {
+            cfg.tts.provider = match value {
+                "local" | "cloud" => value.to_string(),
+                _ => String::new(),
+            };
+        }
+        if let Some(value) = tts.get("endpoint").and_then(Value::as_str) {
+            cfg.tts.endpoint = value.trim().to_string();
+        }
+    }
+    crate::paths::write_config(&state.paths.config_file(), &cfg)?;
+    *state.config.write().map_err(|e| e.to_string())? = cfg.clone();
+    Ok(settings_body(&cfg))
+}
+
 #[tauri::command]
 pub fn api_request(
     state: State<'_, AppState>,
@@ -634,8 +708,22 @@ pub fn api_request(
     method: String,
     body: Option<String>,
 ) -> ApiOut {
-    let _ = method;
     let path = url.split('?').next().unwrap_or("");
+    if path == "/api/settings" {
+        if method == "POST" {
+            return ApiOut {
+                status: 200,
+                body: match update_settings(&state, body) {
+                    Ok(body) => body,
+                    Err(error) => json!({ "ok": false, "error": error }),
+                },
+            };
+        }
+        return ApiOut {
+            status: 200,
+            body: ok(settings_body(&state.config())),
+        };
+    }
     let cfg = state.config();
     let payload = match path {
         "/api/groups" => json!({
@@ -703,21 +791,6 @@ pub fn api_request(
             }
         }
         "/api/character-traits" => json!({ "voice": { "enabled": false } }),
-        "/api/settings" => json!({
-            "llm": {
-                "base_url": cfg.llm.base_url,
-                "api_key": cfg.llm.api_key,
-                "model": cfg.llm.model,
-            },
-            "tts": {
-                "provider": cfg.tts.provider,
-                "endpoint": cfg.tts.endpoint,
-                "mode": "off",
-                "voice": "",
-                "speed": 1.0,
-            },
-            "setup": { "required": false },
-        }),
         "/api/identity" => json!({
             "owner_id": cfg.qq.owner_id.parse::<i64>().unwrap_or(10001),
             "owner_nickname": cfg.qq.server.owner_nickname,
