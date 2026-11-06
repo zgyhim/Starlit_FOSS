@@ -325,6 +325,89 @@ async fn maybe_digest(app: &AppHandle) -> bool {
     true
 }
 
+/// 到期的约定主动跟进；成功后标记 followed_up。
+async fn agreement_tick(app: &AppHandle) -> bool {
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let cfg = state.config();
+    let now = chrono::Utc::now().timestamp() as f64;
+    let due = state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT id, peer_id, title, details FROM shared_agreements
+                 WHERE status = 'confirmed' AND due_at > 0 AND due_at <= ?1
+                 ORDER BY due_at ASC LIMIT 1",
+                rusqlite::params![now],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+        })
+        .ok();
+    let Some((id, peer, title, details)) = due else {
+        return false;
+    };
+    let conv = Conversation {
+        kind: "Private".into(),
+        id: peer,
+    };
+    let (name, slug) = llm::character_of(&state, &conv.id);
+    let persona = llm::persona_of(&state, &slug);
+    let history = llm::recent_messages(&state, &conv, 12);
+    let owner = cfg.qq.server.owner_nickname.clone();
+    let mut messages = vec![json!({
+        "role": "system",
+        "content": format!(
+            "你是{name}，正在和{owner}私聊。以下是你的人设：\n{persona}\n\n             要求：口语化、简短；不要 Markdown；不要解释你是 AI。"
+        ),
+    })];
+    for (direction, text) in &history {
+        if text.trim().is_empty() {
+            continue;
+        }
+        messages.push(json!({
+            "role": if direction == "Outgoing" { "user" } else { "assistant" },
+            "content": text,
+        }));
+    }
+    messages.push(json!({
+        "role": "user",
+        "content": format!(
+            "你们之前有一个约定：「{title}」。补充：{details}\n             现在到期了，请自然地提起这件事，1-2 句，不要像系统提醒。"
+        ),
+    }));
+    let Ok(reply) = llm::chat(&cfg, messages).await else {
+        return false;
+    };
+    let text = reply.trim();
+    if text.is_empty() {
+        return false;
+    }
+    if let Some(message) = llm::insert_reply(&state, &conv, &name, text) {
+        let _ = app.emit("message:new", json!({ "message": message }));
+    }
+    let _ = state.db.with(|conn| {
+        conn.execute(
+            "UPDATE shared_agreements SET status = 'followed_up' WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        Ok(())
+    });
+    let now = chrono::Utc::now().timestamp();
+    kv_set(&state, "autonomy.last_ts", &now.to_string());
+    let (today, count) = next_day_reset(&state);
+    kv_set(&state, "autonomy.day", &today);
+    kv_set(&state, "autonomy.count", &(count + 1).to_string());
+    true
+}
+
 async fn tick(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -365,6 +448,10 @@ async fn tick(app: &AppHandle) {
     let skip_probability = (cfg.autonomy.skip_probability
         + (1.0 - energy / ENERGY_MAX) * cfg.autonomy.state_influence)
         .clamp(0.0, 0.95);
+    if agreement_tick(app).await {
+        return;
+    }
+
     if rand::rng().random::<f64>() < skip_probability {
         let interval = pick_interval(&cfg).max(cfg.autonomy.min_gap_min);
         kv_set(&state, "autonomy.next_ts", &(now + interval as i64 * 60).to_string());
