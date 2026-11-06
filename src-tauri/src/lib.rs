@@ -77,16 +77,23 @@ pub fn run() {
             paths.seed()?;
             let config = paths.load_config()?;
             let db = db::Db::open(&paths.db_file())?;
-            media::extract_startup(&paths)?;
+            let log_file = paths.log_file();
+            let paths_for_media = paths.clone();
+            app.manage(state::AppState::new(paths, config, db));
 
-            let background_paths = paths.clone();
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                let _ = media::extract_background(&background_paths);
+                use std::sync::atomic::Ordering;
+                use tauri::Manager;
+
+                let _ = media::extract_startup(&paths_for_media);
+                let _ = media::extract_background(&paths_for_media);
+                state::append_log(&log_file, "media cache ready");
+                if let Some(state) = handle.try_state::<state::AppState>() {
+                    state.media_ready.store(true, Ordering::Relaxed);
+                }
                 let _ = tauri::Emitter::emit(&handle, "media:ready", true);
             });
-
-            app.manage(state::AppState::new(paths, config, db));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -110,6 +117,7 @@ pub fn run() {
             api::media_cache_info,
             api::set_media_auto_clear,
             api::clear_media_cache,
+            api::media_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

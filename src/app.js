@@ -12589,6 +12589,44 @@
     desktop.windowState().then(applyState).catch(() => {});
   }
 
+  // ---------------------------------------------------------- 启动缓存
+  function setBootSplash(visible) {
+    const splash = document.getElementById('bootSplash');
+    if (splash) splash.classList.toggle('is-hidden', !visible);
+  }
+
+  function waitForMediaReady(timeoutMs = 300000) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve(true);
+      };
+      if (window.__TAURI__?.event) {
+        window.__TAURI__.event.listen('media:ready', finish);
+      }
+      const started = Date.now();
+      const poll = async () => {
+        if (settled) return;
+        try {
+          const info = await api.mediaStatus();
+          if (info?.ready) return finish();
+        } catch (e) { /* 继续等待 */ }
+        if (Date.now() - started > timeoutMs) return finish();
+        setTimeout(poll, 400);
+      };
+      poll();
+    });
+  }
+
+  async function bootSequence() {
+    setBootSplash(true);
+    await waitForMediaReady();
+    setBootSplash(false);
+    connect();
+  }
+
   function init() {
     const qTheme = new URLSearchParams(location.search).get('theme');
     setupDesktopWindow();
@@ -12617,7 +12655,7 @@
         loadStickers(true);
       });
     }
-    connect();
+    bootSequence();
   }
 
   init();

@@ -12,6 +12,8 @@ pub struct AppState {
     pub started_at: i64,
     /// 本次退出时强制清理解压缓存。
     pub pending_media_clear: AtomicBool,
+    /// 媒体资源包是否已全部解压完成。
+    pub media_ready: AtomicBool,
 }
 
 impl AppState {
@@ -22,6 +24,7 @@ impl AppState {
             db,
             started_at: chrono::Utc::now().timestamp(),
             pending_media_clear: AtomicBool::new(false),
+            media_ready: AtomicBool::new(false),
         }
     }
 

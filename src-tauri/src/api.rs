@@ -350,7 +350,8 @@ fn parts_text(parts: &Value) -> String {
                 Some("text") => {
                     text.push_str(part.get("text").and_then(Value::as_str).unwrap_or(""))
                 }
-                Some("image") | Some("sticker") => text.push_str("[图片]"),
+                Some("image") => text.push_str("[图片]"),
+                Some("sticker") => text.push_str("[表情包]"),
                 Some("voice") => text.push_str("[语音]"),
                 Some("mention") => {
                     text.push('@');
@@ -593,6 +594,13 @@ pub fn media_cache_info(state: State<'_, AppState>) -> Value {
 #[tauri::command]
 pub fn set_media_auto_clear(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     kv_set(&state, "media.auto_clear_on_exit", if enabled { "1" } else { "0" })
+}
+
+#[tauri::command]
+pub fn media_status(state: State<'_, AppState>) -> Value {
+    json!({
+        "ready": state.media_ready.load(std::sync::atomic::Ordering::Relaxed),
+    })
 }
 
 #[tauri::command]
