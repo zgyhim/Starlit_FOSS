@@ -354,8 +354,11 @@ fn parts_text(parts: &Value) -> String {
                 Some("sticker") => text.push_str("[表情包]"),
                 Some("voice") => text.push_str("[语音]"),
                 Some("mention") => {
-                    text.push('@');
-                    text.push_str(part.get("label").and_then(Value::as_str).unwrap_or(""));
+                    let label = part.get("label").and_then(Value::as_str).unwrap_or("");
+                    if !label.starts_with('@') {
+                        text.push('@');
+                    }
+                    text.push_str(label);
                 }
                 Some("share") => {
                     text.push_str("[分享]");
@@ -972,6 +975,46 @@ pub fn api_request(
     body: Option<String>,
 ) -> ApiOut {
     let path = url.split('?').next().unwrap_or("");
+
+
+    if path == "/api/groups/detail" {
+        let params = query_params(&url);
+        let gid = params.get("groupId").or_else(|| params.get("group_id")).cloned().unwrap_or_default();
+        let cfg = state.config();
+        let members: Vec<Value> = characters(&state)
+            .into_iter()
+            .map(|c| {
+                let id = c.get("id").and_then(Value::as_str).unwrap_or("");
+                json!({
+                    "userId": id,
+                    "nickname": c.get("name").and_then(Value::as_str).unwrap_or("角色"),
+                    "role": "member",
+                    "level": 1,
+                    "is_me": false,
+                    "title": "",
+                })
+            })
+            .chain(std::iter::once(json!({
+                "userId": cfg.qq.owner_id.parse::<i64>().unwrap_or(10001).to_string(),
+                "nickname": cfg.qq.server.owner_nickname,
+                "role": "owner",
+                "level": 1,
+                "is_me": true,
+                "title": "",
+            })))
+            .collect();
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "groupId": gid,
+            "groupName": groups(&state).iter().find_map(|g| {
+                (g.get("id").and_then(Value::as_str) == Some(gid.as_str()))
+                    .then(|| g.get("name").and_then(Value::as_str).unwrap_or("群聊"))
+            }).unwrap_or("群聊"),
+            "member_count": members.len(),
+            "members": members,
+            "mute_all": false,
+        })};
+    }
 
     if path == "/api/profile" {
         let mut cfg = state.config();

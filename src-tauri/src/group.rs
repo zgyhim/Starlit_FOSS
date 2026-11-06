@@ -219,6 +219,51 @@ fn bump_group_count(state: &AppState) {
     });
 }
 
+fn hourly_count(state: &AppState, conv: &Conversation) -> i64 {
+    let since = chrono::Utc::now().timestamp() - 3600;
+    state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM messages
+                 WHERE conversation_kind = 'Group' AND conversation_id = ?1
+                   AND direction = 'Incoming' AND sent_at >= ?2",
+                rusqlite::params![conv.id, since],
+                |row| row.get(0),
+            )
+        })
+        .unwrap_or(0)
+}
+
+fn member_gap_ok(state: &AppState, member_id: &str, min_gap_sec: u64) -> bool {
+    let key = format!("group.last.{member_id}");
+    let now = chrono::Utc::now().timestamp();
+    let last = state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get::<_, String>(0),
+            )
+        })
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    if now - last < min_gap_sec as i64 {
+        return false;
+    }
+    let _ = state.db.with(|conn| {
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![key, now.to_string()],
+        )?;
+        Ok(())
+    });
+    true
+}
+
 pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, user_text: String) {
     tauri::async_runtime::spawn(async move {
         let Some(state) = app.try_state::<AppState>() else {
@@ -226,6 +271,9 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
         };
         let cfg = state.config();
         if !cfg.group.enabled || !group_daily_left(&state, &cfg) {
+            return;
+        }
+        if hourly_count(&state, &conv) >= cfg.group.msgs_per_hour as i64 {
             return;
         }
         let members = characters(&state);
@@ -236,13 +284,20 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
         let history = transcript(&state, &conv, 20);
         let owner = cfg.qq.server.owner_nickname.clone();
 
-        // 被 @ 的角色优先；否则随机 1-2 位。
+        // 被 @ 的角色优先；没有被 @ 时，按概率决定是否插话。
         let mut responders: Vec<(String, String)> = members
             .iter()
             .filter(|(_, name)| user_text.contains(&format!("@{name}")))
             .cloned()
             .collect();
+        let mentioned = !responders.is_empty();
+        if mentioned {
+            responders.truncate(3);
+        }
         if responders.is_empty() {
+            if !chance(cfg.group.chain_reply_probability) {
+                return;
+            }
             let count = if chance(cfg.group.chain_reply_probability) {
                 2
             } else {
@@ -260,6 +315,14 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
             }
         }
 
+        responders.retain(|(cid, _)| {
+            member_gap_ok(&state, cid, cfg.group.min_gap_member_sec)
+        });
+        let bubbles = if mentioned {
+            cfg.group.bubbles_when_mentioned
+        } else {
+            cfg.group.bubbles_per_turn
+        };
         for (index, (cid, name)) in responders.iter().enumerate() {
             if index > 0 {
                 let delay = range_u64(1500, 6000);
@@ -291,7 +354,7 @@ pub fn spawn_group_reply(app: AppHandle, conv: Conversation, _message_id: i64, u
             if text.is_empty() {
                 continue;
             }
-            for line in crate::llm::split_reply(text, cfg.behavior.split_threshold, 2) {
+            for line in crate::llm::split_reply(text, cfg.behavior.split_threshold, bubbles.max(1)) {
                 if let Some(message) = insert_group_message(&state, &conv, cid, name, &line) {
                     let _ = app.emit("message:new", json!({ "message": message }));
                 }
