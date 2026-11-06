@@ -6292,7 +6292,26 @@
       ? last.sender.name + '：' : (last.dir === 'out' ? '我：' : '');
     meta.preview = who + previewOf(last);
     meta.ts = last.ts;
-    renderConvList();
+    if (!updateConvRow(k)) renderConvList();
+  }
+
+  // 只改一行的文字和时间，不重建头像 <img>，避免发送消息时整列头像闪一下。
+  function updateConvRow(key) {
+    if (!els.convList) return false;
+    const wrap = els.convList.querySelector(`.conv-wrap[data-peer="${String(key)}"]`);
+    if (!wrap) return false;
+    const meta = convMetaFor(key);
+    const list = String(key) === curConvKey() ? state.msgs : listFor(key);
+    const last = list[list.length - 1] || null;
+    const draft = state.drafts && state.drafts[String(key)];
+    const preview = draft || meta.preview ||
+      (last ? ((last.dir === 'out' ? '我：' : '') + previewOf(last)) : '');
+    const pv = wrap.querySelector('.conv-preview');
+    if (pv) pv.textContent = preview;
+    const tm = wrap.querySelector('.conv-time');
+    if (tm) tm.textContent = fmtConvTime(Number(meta.ts || (last && last.ts) || 0));
+    if (els.convList.firstElementChild !== wrap) els.convList.prepend(wrap);
+    return true;
   }
 
   function updateConvPreview(_msg, key = curConvKey()) {
@@ -7924,7 +7943,6 @@
       if (state.connected) rememberRecentSticker(url);
       if (state.stickers && !els.stickerPanel.classList.contains('hidden')) {
         renderStickerTabs();
-        renderStickerGrid();
       }
     } catch (e) {
       toast('表情包发送失败：' + (e?.message || e));
