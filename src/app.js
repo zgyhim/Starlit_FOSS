@@ -12571,24 +12571,6 @@
     } catch (e) { /* 老服务端没有这个接口 → 保留文字头像 */ }
   }
 
-  function setupDesktopWindow() {
-    const desktop = window.starlitDesktop;
-    if (!desktop || typeof desktop.windowControl !== 'function') return;
-    document.documentElement.classList.add('desktop-window');
-    const maximize = $('#windowMaximize');
-    const applyState = (windowState) => {
-      const maximized = !!(windowState && windowState.maximized);
-      maximize.setAttribute('aria-label', maximized ? '还原' : '最大化');
-      maximize.title = maximized ? '还原' : '最大化';
-      maximize.classList.toggle('is-maximized', maximized);
-    };
-    $('#windowMinimize').addEventListener('click', () => desktop.windowControl('minimize'));
-    maximize.addEventListener('click', () => desktop.windowControl('maximize'));
-    $('#windowClose').addEventListener('click', () => desktop.windowControl('close'));
-    desktop.onWindowState(applyState);
-    desktop.windowState().then(applyState).catch(() => {});
-  }
-
   // ---------------------------------------------------------- 启动缓存
   function setBootSplash(visible) {
     const splash = document.getElementById('bootSplash');
@@ -12661,7 +12643,6 @@
 
   function init() {
     const qTheme = new URLSearchParams(location.search).get('theme');
-    setupDesktopWindow();
     setupDialogA11y();
     setTheme(qTheme || localStorage.getItem(LS_THEME) || 'light');
     setImmersion(localStorage.getItem(LS_IMMERSION) === '1', false);
