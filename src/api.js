@@ -38,6 +38,12 @@
         corrected: corrected ?? false,
       }),
     deleteMemory: (id) => invoke("delete_memory", { id: String(id) }),
+    characterDraftChat: (draftId, revision, text) =>
+      invoke("character_draft_chat", { draftId, revision, text }),
+    characterDraftGenerate: (name, avatar) =>
+      invoke("character_draft_generate", { name, avatar }),
+    diagnosticsTest: (target) => invoke("diagnostics_test", { target }),
+    createBackup: () => invoke("create_backup"),
     ping: () => invoke("ping"),
     mediaStatus: () => invoke("media_status"),
     mediaCacheInfo: () => invoke("media_cache_info"),

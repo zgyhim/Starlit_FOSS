@@ -7,6 +7,7 @@ mod llm;
 mod group;
 mod lock;
 mod memory;
+mod pipeline;
 mod logging;
 mod media;
 mod paths;
@@ -155,6 +156,10 @@ pub fn run() {
             api::create_memory,
             api::update_memory,
             api::delete_memory,
+            api::character_draft_chat,
+            api::character_draft_generate,
+            api::diagnostics_test,
+            api::create_backup,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
