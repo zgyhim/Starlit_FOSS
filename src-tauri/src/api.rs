@@ -1284,6 +1284,116 @@ fn add_zip_dir(
     Ok(())
 }
 
+
+#[tauri::command]
+pub async fn generate_diary(
+    state: State<'_, AppState>,
+    peer_id: String,
+    day: String,
+) -> Result<Value, String> {
+    let date = chrono::NaiveDate::parse_from_str(&day, "%Y-%m-%d")
+        .map_err(|_| "day must be YYYY-MM-DD".to_string())?;
+    let start = date.and_hms_opt(0, 0, 0).ok_or("invalid day")?;
+    let end = date.succ_opt().and_then(|d| d.and_hms_opt(0, 0, 0)).ok_or("invalid day")?;
+    use chrono::TimeZone;
+    let start = chrono::Local.from_local_datetime(&start).single()
+        .map(|t| t.timestamp()).unwrap_or(0);
+    let end = chrono::Local.from_local_datetime(&end).single()
+        .map(|t| t.timestamp()).unwrap_or(start + 86400);
+    let rows = state.db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT direction, text FROM messages
+             WHERE conversation_kind = 'Private' AND conversation_id = ?1
+               AND direction IN ('Incoming','Outgoing') AND sent_at >= ?2 AND sent_at < ?3
+             ORDER BY sent_at ASC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![peer_id, start, end], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }).unwrap_or_default();
+    if rows.is_empty() {
+        return Err("diary requires user and assistant messages".into());
+    }
+    let messages_count = rows.len();
+    let transcript = rows
+        .iter()
+        .map(|(direction, text)| {
+            format!("{}: {text}", if direction == "Outgoing" { "老师" } else { "她" })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (name, slug) = find_character(&state, &peer_id).unwrap_or(("角色".into(), peer_id.clone()));
+    let persona = read_persona(&state, &slug);
+    let cfg = state.config();
+    let messages = vec![json!({
+        "role": "user",
+        "content": format!(
+            "你是{name}。这是你和老师今天（{day}）的聊天记录：\n{transcript}\n\n\
+             请以{name}的第一人称写一篇日记，150-300 字，口语、私密、自然；不要使用 Markdown。\n\
+             你的人设参考：\n{persona}"
+        ),
+    })];
+    let content = crate::llm::chat(&cfg, messages).await?;
+    let content = content.trim().to_string();
+    if content.is_empty() {
+        return Err("模型没有返回日记".into());
+    }
+    let now = chrono::Utc::now().timestamp() as f64;
+    let title = format!("{day} 的日记");
+    state.db.with(|conn| {
+        conn.execute(
+            "INSERT INTO shared_diaries_v2
+             (peer_id, day, title, content, source_turn_ids, message_count, generated_at)
+             VALUES (?1, ?2, ?3, ?4, '[]', ?5, ?6)
+             ON CONFLICT(peer_id, day) DO UPDATE SET
+               title = excluded.title, content = excluded.content,
+               message_count = excluded.message_count, generated_at = excluded.generated_at",
+            rusqlite::params![peer_id, day, title, content, messages_count as i64, now],
+        )?;
+        Ok(())
+    })?;
+    Ok(json!({
+        "ok": true,
+        "item": { "day": day, "title": title, "content": content,
+                  "message_count": messages_count, "generated_at": now },
+    }))
+}
+
+#[tauri::command]
+pub fn restore_backup(state: State<'_, AppState>, data: String) -> Result<Value, String> {
+    let bytes = BASE64.decode(data).map_err(|e| format!("备份解码失败: {e}"))?;
+    let reader = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("备份格式无效: {e}"))?;
+    let stamp = chrono::Utc::now().timestamp();
+    let staging = state.paths.backups.join(format!("restore-{stamp}"));
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        if name.starts_with('/') || name.contains("..") {
+            continue;
+        }
+        let target = staging.join(&name);
+        if entry.is_dir() {
+            let _ = std::fs::create_dir_all(&target);
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut file = std::fs::File::create(&target).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut file).map_err(|e| e.to_string())?;
+    }
+    let marker = state.paths.root.join(".restore_pending");
+    std::fs::write(&marker, staging.display().to_string()).map_err(|e| e.to_string())?;
+    Ok(json!({
+        "ok": true,
+        "requiresRestart": true,
+        "message": "备份已准备好，重启星伴后生效。",
+    }))
+}
+
 #[tauri::command]
 pub fn create_backup(state: State<'_, AppState>) -> Result<Value, String> {
     let _ = state.db.with(|conn| {
@@ -1861,6 +1971,198 @@ pub fn api_request(
         return ApiOut { status: 200, body: json!({ "ok": true }) };
     }
 
+
+
+    if path == "/api/shared-life" {
+        let params = query_params(&url);
+        let peer = params.get("peer_id").cloned().unwrap_or_default();
+        let anniversaries = state.db.with(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, title, date, yearly, note, created_at, updated_at
+                 FROM shared_anniversaries WHERE peer_id = ?1 ORDER BY date DESC",
+            )?;
+            let items = stmt.query_map(rusqlite::params![peer], |row| {
+                Ok(json!({
+                    "id": row.get::<_, i64>(0)?.to_string(),
+                    "title": row.get::<_, String>(1)?,
+                    "date": row.get::<_, String>(2)?,
+                    "yearly": row.get::<_, i64>(3).unwrap_or(0) > 0,
+                    "note": row.get::<_, String>(4)?,
+                    "created_at": row.get::<_, f64>(5).unwrap_or(0.0),
+                    "updated_at": row.get::<_, f64>(6).unwrap_or(0.0),
+                }))
+            })?.collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(items)
+        }).unwrap_or_default();
+        let agreements = state.db.with(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, title, details, due_at, status FROM shared_agreements
+                 WHERE peer_id = ?1 ORDER BY due_at ASC",
+            )?;
+            let items = stmt.query_map(rusqlite::params![peer], |row| {
+                Ok(json!({
+                    "id": row.get::<_, i64>(0)?.to_string(),
+                    "title": row.get::<_, String>(1)?,
+                    "details": row.get::<_, String>(2)?,
+                    "due_at": row.get::<_, f64>(3).unwrap_or(0.0),
+                    "status": row.get::<_, String>(4)?,
+                }))
+            })?.collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(items)
+        }).unwrap_or_default();
+        let diaries = state.db.with(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT day, title, content, message_count, generated_at
+                 FROM shared_diaries_v2 WHERE peer_id = ?1 ORDER BY day DESC",
+            )?;
+            let items = stmt.query_map(rusqlite::params![peer], |row| {
+                Ok(json!({
+                    "day": row.get::<_, String>(0)?,
+                    "title": row.get::<_, String>(1)?,
+                    "content": row.get::<_, String>(2)?,
+                    "message_count": row.get::<_, i64>(3).unwrap_or(0),
+                    "generated_at": row.get::<_, f64>(4).unwrap_or(0.0),
+                }))
+            })?.collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(items)
+        }).unwrap_or_default();
+        return ApiOut { status: 200, body: json!({
+            "ok": true, "peer_id": peer,
+            "anniversaries": anniversaries,
+            "agreements": agreements,
+            "diaries": diaries,
+            "overview": {},
+        })};
+    }
+
+    if path == "/api/shared-life/anniversaries" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let now = chrono::Utc::now().timestamp() as f64;
+        if method == "DELETE" {
+            let id = payload.get("id").and_then(Value::as_str).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+            let _ = state.db.with(|conn| {
+                conn.execute("DELETE FROM shared_anniversaries WHERE id = ?1 AND peer_id = ?2",
+                    rusqlite::params![id, peer])?;
+                Ok(())
+            });
+            return ApiOut { status: 200, body: json!({ "ok": true }) };
+        }
+        let title = payload.get("title").and_then(Value::as_str).unwrap_or("").trim();
+        let date = payload.get("date").and_then(Value::as_str).unwrap_or("");
+        let yearly = payload.get("yearly").and_then(Value::as_bool).unwrap_or(false);
+        let note = payload.get("note").and_then(Value::as_str).unwrap_or("");
+        if title.is_empty() || date.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "标题和日期不能为空" }) };
+        }
+        let id = payload.get("id").and_then(Value::as_str).and_then(|v| v.parse::<i64>().ok());
+        let item_id = match id {
+            Some(id) => {
+                let _ = state.db.with(|conn| {
+                    conn.execute(
+                        "UPDATE shared_anniversaries SET title = ?1, date = ?2, yearly = ?3,
+                         note = ?4, updated_at = ?5 WHERE id = ?6 AND peer_id = ?7",
+                        rusqlite::params![title, date, yearly as i64, note, now, id, peer],
+                    )?;
+                    Ok(())
+                });
+                id
+            }
+            None => state.db.with(|conn| {
+                conn.execute(
+                    "INSERT INTO shared_anniversaries
+                     (title, date, yearly, note, created_at, updated_at, peer_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+                    rusqlite::params![title, date, yearly as i64, note, now, peer],
+                )?;
+                Ok(conn.last_insert_rowid())
+            }).unwrap_or(0),
+        };
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "item": { "id": item_id.to_string(), "title": title, "date": date,
+                      "yearly": yearly, "note": note, "created_at": now, "updated_at": now },
+        })};
+    }
+
+    if path == "/api/shared-life/agreements" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        if method == "DELETE" {
+            let id = payload.get("id").and_then(Value::as_str).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+            let _ = state.db.with(|conn| {
+                conn.execute("DELETE FROM shared_agreements WHERE id = ?1 AND peer_id = ?2",
+                    rusqlite::params![id, peer])?;
+                Ok(())
+            });
+            return ApiOut { status: 200, body: json!({ "ok": true }) };
+        }
+        let title = payload.get("title").and_then(Value::as_str).unwrap_or("").trim();
+        let details = payload.get("details").and_then(Value::as_str).unwrap_or("");
+        let due_at = payload.get("due_at").and_then(Value::as_f64).unwrap_or(0.0);
+        if title.is_empty() {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "标题不能为空" }) };
+        }
+        let id = payload.get("id").and_then(Value::as_str).and_then(|v| v.parse::<i64>().ok());
+        let item_id = match id {
+            Some(id) => {
+                let _ = state.db.with(|conn| {
+                    conn.execute(
+                        "UPDATE shared_agreements SET title = ?1, details = ?2, due_at = ?3,
+                         status = 'pending' WHERE id = ?4 AND peer_id = ?5",
+                        rusqlite::params![title, details, due_at, id, peer],
+                    )?;
+                    Ok(())
+                });
+                id
+            }
+            None => state.db.with(|conn| {
+                conn.execute(
+                    "INSERT INTO shared_agreements (title, details, due_at, status, peer_id)
+                     VALUES (?1, ?2, ?3, 'pending', ?4)",
+                    rusqlite::params![title, details, due_at, peer],
+                )?;
+                Ok(conn.last_insert_rowid())
+            }).unwrap_or(0),
+        };
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "item": { "id": item_id.to_string(), "title": title, "details": details,
+                      "due_at": due_at, "status": "pending" },
+        })};
+    }
+
+    if path == "/api/shared-life/agreements/confirm" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let id = payload.get("id").and_then(Value::as_str).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        let _ = state.db.with(|conn| {
+            conn.execute(
+                "UPDATE shared_agreements SET status = 'confirmed' WHERE id = ?1 AND peer_id = ?2",
+                rusqlite::params![id, peer],
+            )?;
+            Ok(())
+        });
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
+
+    if path == "/api/shared-life/diaries" && method == "DELETE" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let day = payload.get("day").and_then(Value::as_str).unwrap_or("");
+        let _ = state.db.with(|conn| {
+            conn.execute(
+                "DELETE FROM shared_diaries_v2 WHERE peer_id = ?1 AND day = ?2",
+                rusqlite::params![peer, day],
+            )?;
+            Ok(())
+        });
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
 
     if path == "/api/history/search" {
         let params = query_params(&url);

@@ -44,6 +44,8 @@
       invoke("character_draft_generate", { name, avatar }),
     diagnosticsTest: (target) => invoke("diagnostics_test", { target }),
     createBackup: () => invoke("create_backup"),
+    restoreBackup: (data) => invoke("restore_backup", { data }),
+    generateDiary: (peerId, day) => invoke("generate_diary", { peerId, day }),
     ping: () => invoke("ping"),
     mediaStatus: () => invoke("media_status"),
     mediaCacheInfo: () => invoke("media_cache_info"),

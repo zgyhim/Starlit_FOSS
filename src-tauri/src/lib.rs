@@ -80,6 +80,7 @@ pub fn run() {
         .setup(|app| {
             let paths = paths::Paths::resolve(app.handle())?;
             paths.ensure()?;
+            paths.apply_pending_restore();
 
             let instance_lock = match lock::InstanceLock::acquire(&paths.root) {
                 Ok(lock) => lock,
@@ -160,6 +161,8 @@ pub fn run() {
             api::character_draft_generate,
             api::diagnostics_test,
             api::create_backup,
+            api::restore_backup,
+            api::generate_diary,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

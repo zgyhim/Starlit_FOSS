@@ -213,6 +213,8 @@
     settingsTtsTestState: $('#settingsTtsTestState'),
     settingsAddCharacter: $('#settingsAddCharacter'),
     settingsBackup: $('#settingsBackup'),
+    settingsRestore: $('#settingsRestore'),
+    settingsRestoreInput: $('#settingsRestoreInput'),
     settingsCacheState: $('#settingsCacheState'),
     settingsClearCache: $('#settingsClearCache'),
     settingsAutoClearCache: $('#settingsAutoClearCache'),
@@ -4457,9 +4459,7 @@
     const mutationId = beginSharedLifeMutation('diary-generate');
     let generated = false;
     try {
-      await sharedLifeSend('/api/shared-life/diaries/generate', 'POST', {
-        peer_id: peerId, day,
-      }, '日记生成失败');
+      await api.generateDiary(peerId, day);
       if (!sharedLifeMutationCurrent(peerId, mutationId)) return;
       generated = true;
     } catch (error) {
@@ -10665,6 +10665,30 @@
   });
 
   els.settingsBackup.addEventListener('click', downloadBackup);
+  els.settingsRestore.addEventListener('click', () => {
+    els.settingsRestoreInput.value = '';
+    els.settingsRestoreInput.click();
+  });
+  els.settingsRestoreInput.addEventListener('change', async () => {
+    const file = (els.settingsRestoreInput.files || [])[0];
+    if (!file) return;
+    if (!confirm(`从「${file.name}」恢复备份？\n\n当前数据会被覆盖，恢复将在重启星伴后生效。`)) return;
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取备份文件失败'));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      const out = await api.restoreBackup(base64);
+      toast(out?.message || '备份已准备，请重启星伴');
+    } catch (e) {
+      toast('恢复失败：' + (e?.message || e));
+    } finally {
+      els.settingsRestoreInput.value = '';
+    }
+  });
   els.characterClose.addEventListener('click', closeCharacterModal);
   els.characterCancel.addEventListener('click', closeCharacterModal);
   els.characterMask.addEventListener('click', (e) => {

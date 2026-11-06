@@ -1499,7 +1499,11 @@
       </div>
       <div class="setting-row">
         <div><strong>数据备份</strong><span>包含聊天、回忆、人设和群数据，不含密钥；恢复前请先停止星伴</span></div>
-        <button class="ghost" id="settingsBackup" type="button">下载备份</button>
+        <div class="setting-inline">
+          <button class="ghost" id="settingsRestore" type="button">恢复备份</button>
+          <button class="ghost" id="settingsBackup" type="button">下载备份</button>
+          <input type="file" id="settingsRestoreInput" accept=".zip,application/zip" hidden>
+        </div>
       </div>
       <section class="update-settings" id="settingsCacheSection" aria-label="本地缓存">
         <div class="setting-row">
