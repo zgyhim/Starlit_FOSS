@@ -1,3 +1,8 @@
+use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
+
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::State;
@@ -79,6 +84,184 @@ fn characters(state: &AppState) -> Vec<Value> {
         .and_then(Value::as_array)
         .map(|items| items.to_vec())
         .unwrap_or_default()
+}
+
+
+fn safe_segment(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || value.contains('/') || value.contains('\\') || value == "." || value == ".." {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn is_image(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp")
+    )
+}
+
+fn sticker_url(file: &str) -> String {
+    let encoded = file
+        .split('/')
+        .map(|segment| utf8_percent_encode(segment, NON_ALPHANUMERIC).to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("starlit://local/stickers/{encoded}")
+}
+
+fn sticker_item(file: &str, meta: Option<&Value>) -> Value {
+    let group = file.split('/').next().unwrap_or("").to_string();
+    let name = file.rsplit('/').next().unwrap_or(file).to_string();
+    let animated = matches!(
+        file.rsplit('.')
+            .next()
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("gif" | "webp")
+    );
+    json!({
+        "url": sticker_url(file),
+        "path": file,
+        "group": group,
+        "name": name,
+        "animated": animated,
+        "desc": meta.and_then(|m| m.get("desc")).cloned().unwrap_or(Value::Null),
+        "emotions": meta.and_then(|m| m.get("emotions")).cloned().unwrap_or_else(|| json!([])),
+        "source": meta.and_then(|m| m.get("source")).cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn read_sticker_index(state: &AppState) -> Vec<Value> {
+    let path = state.paths.data.join("stickers").join("index.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_sticker_index(state: &AppState, index: &[Value]) -> Result<(), String> {
+    let path = state.paths.data.join("stickers").join("index.json");
+    let text = serde_json::to_string_pretty(index).map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+fn collect_files(dir: &Path, root: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, root, out);
+        } else if path.is_file() && is_image(&path) {
+            if let Ok(rel) = path.strip_prefix(root) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+}
+
+fn sticker_groups(state: &AppState) -> Vec<Value> {
+    let root = state.paths.data.join("stickers");
+    let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut seen = HashSet::new();
+
+    for entry in read_sticker_index(state) {
+        let Some(file) = entry.get("file").and_then(Value::as_str) else { continue };
+        if !root.join(file).is_file() || !seen.insert(file.to_string()) {
+            continue;
+        }
+        let group = file.split('/').next().unwrap_or("其他").to_string();
+        groups.entry(group).or_default().push(sticker_item(file, Some(&entry)));
+    }
+
+    let mut files = Vec::new();
+    collect_files(&root, &root, &mut files);
+    for file in files {
+        if !seen.insert(file.clone()) {
+            continue;
+        }
+        let group = file.split('/').next().unwrap_or("其他").to_string();
+        groups.entry(group).or_default().push(sticker_item(&file, None));
+    }
+
+    groups
+        .into_iter()
+        .map(|(name, mut items)| {
+            items.sort_by(|a, b| {
+                a.get("path").and_then(Value::as_str)
+                    .cmp(&b.get("path").and_then(Value::as_str))
+            });
+            json!({ "key": name, "name": name, "items": items })
+        })
+        .collect()
+}
+
+fn upload_sticker(state: &AppState, body: Option<String>) -> Result<Value, String> {
+    let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+        .map_err(|e| format!("请求格式错误: {e}"))?;
+    let data = payload.get("data").and_then(Value::as_str).unwrap_or("");
+    let (_, encoded) = data.split_once(',').ok_or("图片数据无效")?;
+    let bytes = BASE64.decode(encoded).map_err(|e| format!("图片解码失败: {e}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("图片超过 8MB".into());
+    }
+    let raw_name = payload.get("name").and_then(Value::as_str).unwrap_or("sticker.png");
+    let mut name = raw_name.rsplit('/').next().unwrap_or("sticker.png").to_string();
+    if name.is_empty() {
+        name = "sticker.png".into();
+    }
+    if !is_image(Path::new(&name)) {
+        name.push_str(".png");
+    }
+    let group = payload
+        .get("group")
+        .and_then(Value::as_str)
+        .and_then(safe_segment)
+        .unwrap_or_else(|| "custom".into());
+    let root = state.paths.data.join("stickers");
+    let dir = root.join(&group);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut target = dir.join(&name);
+    let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("sticker").to_string();
+    let ext = target.extension().and_then(|s| s.to_str()).unwrap_or("png").to_string();
+    let mut seq = 1;
+    while target.exists() {
+        target = dir.join(format!("{stem}-{seq}.{ext}"));
+        seq += 1;
+    }
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+    let rel = format!(
+        "{group}/{}",
+        target.file_name().and_then(|s| s.to_str()).unwrap_or(&name)
+    );
+    let mut index = read_sticker_index(state);
+    index.push(json!({ "file": rel, "desc": stem, "emotions": [], "source": "custom" }));
+    write_sticker_index(state, &index)?;
+    Ok(json!({ "ok": true, "path": rel, "url": sticker_url(&rel) }))
+}
+
+fn delete_sticker(state: &AppState, body: Option<String>) -> Result<Value, String> {
+    let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+        .map_err(|e| e.to_string())?;
+    let rel = payload.get("path").and_then(Value::as_str).unwrap_or("");
+    if rel.is_empty() || rel.contains("..") {
+        return Err("无效路径".into());
+    }
+    let root = state.paths.data.join("stickers");
+    let target = root.join(rel);
+    if target.is_file() {
+        std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+    }
+    let index: Vec<Value> = read_sticker_index(state)
+        .into_iter()
+        .filter(|entry| entry.get("file").and_then(Value::as_str) != Some(rel))
+        .collect();
+    write_sticker_index(state, &index)?;
+    Ok(json!({ "ok": true }))
 }
 
 fn avatar_items(state: &AppState) -> Value {
@@ -387,7 +570,7 @@ pub fn api_request(
     method: String,
     body: Option<String>,
 ) -> ApiOut {
-    let _ = (method, body);
+    let _ = method;
     let path = url.split('?').next().unwrap_or("");
     let cfg = state.config();
     let payload = match path {
@@ -405,6 +588,56 @@ pub fn api_request(
         "/api/presence" => json!({ "status": "online", "label": "在线" }),
         "/api/avatars" => json!({ "items": avatar_items(&state) }),
         "/api/sticker-sets" => json!({ "sets": {} }),
+        "/api/stickers" => json!({ "groups": sticker_groups(&state) }),
+        "/api/stickers/upload" => return ApiOut {
+            status: 200,
+            body: match upload_sticker(&state, body) {
+                Ok(value) => value,
+                Err(error) => json!({ "ok": false, "error": error }),
+            },
+        },
+        "/api/stickers/delete" => return ApiOut {
+            status: 200,
+            body: match delete_sticker(&state, body) {
+                Ok(value) => value,
+                Err(error) => json!({ "ok": false, "error": error }),
+            },
+        },
+        "/api/sticker-category/create" => {
+            let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}")).unwrap_or_default();
+            let name = payload.get("name").and_then(Value::as_str).unwrap_or("");
+            match safe_segment(name) {
+                Some(key) => {
+                    std::fs::create_dir_all(state.paths.data.join("stickers").join(&key))
+                        .map_err(|e| e.to_string())
+                        .ok();
+                    json!({ "ok": true, "name": key, "key": key })
+                }
+                None => json!({ "ok": false, "error": "分类名称无效" }),
+            }
+        }
+        "/api/sticker-category/delete" => {
+            let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}")).unwrap_or_default();
+            let key = payload.get("key").and_then(Value::as_str).unwrap_or("");
+            match safe_segment(key) {
+                Some(key) => {
+                    let dir = state.paths.data.join("stickers").join(&key);
+                    let _ = std::fs::remove_dir_all(&dir);
+                    let prefix = format!("{key}/");
+                    let index: Vec<Value> = read_sticker_index(&state)
+                        .into_iter()
+                        .filter(|entry| {
+                            entry.get("file").and_then(Value::as_str)
+                                .map(|file| !file.starts_with(&prefix))
+                                .unwrap_or(true)
+                        })
+                        .collect();
+                    let _ = write_sticker_index(&state, &index);
+                    json!({ "ok": true })
+                }
+                None => json!({ "ok": false, "error": "分类无效" }),
+            }
+        }
         "/api/character-traits" => json!({ "voice": { "enabled": false } }),
         "/api/settings" => json!({
             "llm": {

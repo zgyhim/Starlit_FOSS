@@ -29,6 +29,7 @@ zstd = "0.14.3"
 tar = "0.4.46"
 sha2 = "0.10.9"
 percent-encoding = "2.3.2"
+base64 = "0.23.1"
 
 [profile.release]
 codegen-units = 1
