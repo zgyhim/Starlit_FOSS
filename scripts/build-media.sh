@@ -20,7 +20,6 @@ pack stickers-mygo.tar.zst -C stickers mygo
 pack stickers-blue-archive.tar.zst -C stickers "blue archive"
 pack stickers-kaguya.tar.zst -C stickers "超时空辉夜姬表情包"
 pack stickers-stolen.tar.zst -C stickers stolen
-pack sticker-thumbs.tar.zst sticker_thumbs
 pack avatars.tar.zst avatars character_avatars
 pack groups.tar.zst groups
 
@@ -28,7 +27,6 @@ cd "$OUT"
 python3 - <<'PY'
 import hashlib, json, os
 entries = [
-  ("sticker-thumbs.tar.zst", "data", "startup", "sticker_thumbs"),
   ("avatars.tar.zst", "data", "startup", "avatars,character_avatars"),
   ("groups.tar.zst", "data", "startup", "groups"),
   ("stickers-mygo.tar.zst", "data/stickers", "background", "mygo"),

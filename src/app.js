@@ -7589,7 +7589,7 @@
     const url = String(item?.url || '');
     return {
       url,
-      thumb: String(item?.thumb || url),
+      thumb: url,
       animated: !!item?.animated,
       name: safeDecode((url.split('/').pop() || '')),
       path: String(item?.path || ''),
@@ -7647,41 +7647,16 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'sticker-item loading';
-      btn.title = state.stickerManage ? '点 × 删除' : '点击发送（悬停看动图）';
+      btn.title = state.stickerManage ? '点 × 删除' : '点击发送';
       btn.dataset.animated = it.animated ? '1' : '0';
       btn.dataset.url = it.url;
       const img = document.createElement('img');
-      const originalSrc = resolveAsset(it.url);
-      const thumbSrc = resolveAsset(it.thumb || it.url);
-      let showingOriginal = originalSrc === thumbSrc;
       img.loading = 'lazy';
       img.decoding = 'async';
-      img.src = thumbSrc;
+      img.src = resolveAsset(it.url);
       img.alt = '表情包';
       img.addEventListener('load', () => btn.classList.remove('loading'));
-
-      const playAnim = () => {
-        if (!CAN_HOVER || !it.animated) return;
-        showingOriginal = true;
-        img.src = originalSrc;
-      };
-      const stopAnim = () => {
-        if (!CAN_HOVER || !it.animated) return;
-        showingOriginal = originalSrc === thumbSrc;
-        img.src = thumbSrc;
-      };
-      btn.addEventListener('mouseenter', playAnim);
-      btn.addEventListener('mouseleave', stopAnim);
-
-      img.addEventListener('error', () => {
-        // 缩略图失败 → 退原图；原图也失败 → 隐藏这一格
-        if (!showingOriginal) {
-          showingOriginal = true;
-          img.src = originalSrc;
-          return;
-        }
-        btn.remove();
-      });
+      img.addEventListener('error', () => btn.remove());
       btn.appendChild(img);
       btn.addEventListener('click', () => {
         if (!state.stickerManage) sendSticker(it.url);
@@ -7855,19 +7830,8 @@
 
   async function sendSticker(url) {
     try {
-      const res = await apiRequest(url);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const blob = await res.blob();
-      const dataUrl = await new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result));
-        fr.onerror = () => reject(new Error('读取失败'));
-        fr.readAsDataURL(blob);
-      });
-      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
       const name = decodeURIComponent((url.split('/').pop() || 'sticker.png'));
-      const ext = (name.split('.').pop() || 'png').toLowerCase();
-      const part = { kind: 'sticker', url, name: 'sticker.' + ext };
+      const part = { kind: 'sticker', url, name };
       await doSend([part], '[表情包]', [part]);
       if (state.connected) rememberRecentSticker(url);
       if (state.stickers && !els.stickerPanel.classList.contains('hidden')) {
