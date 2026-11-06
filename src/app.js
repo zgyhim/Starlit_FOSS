@@ -2984,11 +2984,6 @@
     return m.peerId === peerId && m.mutationSeq === mutationId;
   }
 
-  function memoryApiError(data, res, fallback) {
-    return String((data && (data.error || data.message)) ||
-      `${fallback}（HTTP ${res.status}）`);
-  }
-
   function syncMemoryFilters() {
     const selected = state.memories.category;
     els.memoriesFilters.querySelectorAll('.memory-filter').forEach((button) => {
