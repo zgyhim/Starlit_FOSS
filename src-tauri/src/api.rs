@@ -883,6 +883,47 @@ fn read_group_members(state: &AppState, gid: &str) -> Vec<String> {
     }
 }
 
+fn read_member_records(state: &AppState, gid: &str) -> Vec<(String, String, i64)> {
+    let path = group_dir(state, gid).join("members.json");
+    let Some(items) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| value.get("members").and_then(Value::as_array).cloned())
+    else {
+        return characters(state)
+            .into_iter()
+            .filter_map(|c| c.get("id").and_then(Value::as_str).map(str::to_string))
+            .map(|id| (id, "member".to_string(), 1))
+            .collect();
+    };
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let id = item.as_str().map(str::to_string)
+                .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))?;
+            let role = item.get("role").and_then(Value::as_str).unwrap_or("member").to_string();
+            let level = item.get("level").and_then(Value::as_i64).unwrap_or(1);
+            Some((id, role, level))
+        })
+        .collect()
+}
+
+fn write_member_records(
+    state: &AppState,
+    gid: &str,
+    members: &[(String, String, i64)],
+) -> Result<(), String> {
+    let dir = group_dir(state, gid);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let items: Vec<Value> = members
+        .iter()
+        .map(|(id, role, level)| json!({ "id": id, "role": role, "level": level }))
+        .collect();
+    let text = serde_json::to_string_pretty(&json!({ "members": items }))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("members.json"), text).map_err(|e| e.to_string())
+}
+
 fn write_group_members(state: &AppState, gid: &str, members: &[String]) -> Result<(), String> {
     let dir = group_dir(state, gid);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -916,17 +957,38 @@ fn update_group_value(state: &AppState, gid: &str, update: impl FnOnce(&mut Valu
     write_groups_index(state, &index)
 }
 
+fn read_group_requests_list(state: &AppState, gid: &str) -> Vec<Value> {
+    std::fs::read_to_string(group_dir(state, gid).join("requests.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn read_group_requests(state: &AppState, gid: &str) -> Vec<Value> {
+    read_group_requests_list(state, gid)
+}
+
+fn write_group_requests_list(state: &AppState, gid: &str, items: &[Value]) -> Result<(), String> {
+    let dir = group_dir(state, gid);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("requests.json"),
+        serde_json::to_string_pretty(items).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn group_detail_value(state: &AppState, gid: &str) -> Value {
     let cfg = state.config();
-    let members: Vec<Value> = read_group_members(state, gid)
+    let members: Vec<Value> = read_member_records(state, gid)
         .into_iter()
-        .filter_map(|id| {
+        .filter_map(|(id, role, level)| {
             let (name, _) = find_character(state, &id)?;
             Some(json!({
                 "userId": id,
                 "nickname": name,
-                "role": "member",
-                "level": 1,
+                "role": role,
+                "level": level,
                 "is_me": false,
                 "title": "",
             }))
@@ -950,6 +1012,7 @@ fn group_detail_value(state: &AppState, gid: &str) -> Value {
         "mute_all": group.get("mute_all").and_then(Value::as_bool).unwrap_or(false),
         "searchable": group.get("searchable").and_then(Value::as_bool).unwrap_or(true),
         "announce": group.get("announce").cloned().unwrap_or(json!({})),
+        "pending": read_group_requests(state, gid),
     })
 }
 
@@ -1202,18 +1265,71 @@ pub fn api_request(
             }
             "invite" => {
                 if let Some(user) = payload.get("userId").and_then(Value::as_str) {
-                    let mut members = read_group_members(&state, gid);
-                    if !members.iter().any(|id| id == user) {
-                        members.push(user.to_string());
-                        let _ = write_group_members(&state, gid, &members);
+                    let mut records = read_member_records(&state, gid);
+                    if !records.iter().any(|(id, ..)| id == user) {
+                        records.push((user.to_string(), "member".into(), 1));
+                        let _ = write_member_records(&state, gid, &records);
+                    }
+                }
+            }
+            "admin" => {
+                let user = payload.get("userId").and_then(Value::as_str).unwrap_or("");
+                let on = payload.get("on").and_then(Value::as_bool).unwrap_or(false);
+                let mut records = read_member_records(&state, gid);
+                for item in records.iter_mut() {
+                    if item.0 == user {
+                        item.1 = if on { "admin".into() } else { "member".into() };
+                    }
+                }
+                let _ = write_member_records(&state, gid, &records);
+            }
+            "level" => {
+                let user = payload.get("userId").and_then(Value::as_str).unwrap_or("");
+                let level = payload.get("level").and_then(Value::as_i64).unwrap_or(1).clamp(1, 100);
+                let mut records = read_member_records(&state, gid);
+                for item in records.iter_mut() {
+                    if item.0 == user {
+                        item.2 = level;
+                    }
+                }
+                let _ = write_member_records(&state, gid, &records);
+            }
+            "resolve" => {
+                let user = payload.get("userId").and_then(Value::as_str).unwrap_or("");
+                let approve = payload.get("approve").and_then(Value::as_bool).unwrap_or(false);
+                let mut requests = read_group_requests_list(&state, gid);
+                requests.retain(|item| item.get("userId").and_then(Value::as_str) != Some(user));
+                let _ = write_group_requests_list(&state, gid, &requests);
+                if approve && !user.is_empty() {
+                    let mut records = read_member_records(&state, gid);
+                    if !records.iter().any(|(id, ..)| id == user) {
+                        records.push((user.to_string(), "member".into(), 1));
+                        let _ = write_member_records(&state, gid, &records);
+                    }
+                }
+            }
+            "request" => {
+                let user = payload.get("userId").and_then(Value::as_str).unwrap_or("");
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or(user);
+                let note = payload.get("note").and_then(Value::as_str).unwrap_or("想加入这个群");
+                if !user.is_empty() {
+                    let mut requests = read_group_requests_list(&state, gid);
+                    if !requests.iter().any(|item| item.get("userId").and_then(Value::as_str) == Some(user)) {
+                        requests.push(json!({
+                            "userId": user,
+                            "name": name,
+                            "note": note,
+                            "ts": chrono::Utc::now().timestamp(),
+                        }));
+                        let _ = write_group_requests_list(&state, gid, &requests);
                     }
                 }
             }
             "kick" => {
                 if let Some(user) = payload.get("userId").and_then(Value::as_str) {
-                    let mut members = read_group_members(&state, gid);
-                    members.retain(|id| id != user);
-                    let _ = write_group_members(&state, gid, &members);
+                    let mut records = read_member_records(&state, gid);
+                    records.retain(|(id, ..)| id != user);
+                    let _ = write_member_records(&state, gid, &records);
                 }
             }
             "delete" => {
