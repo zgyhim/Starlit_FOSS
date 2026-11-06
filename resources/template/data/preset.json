@@ -1,0 +1,11 @@
+{
+  "preset": "personal-world-clean-history",
+  "version": 1,
+  "characters_total": 10,
+  "groups": 1,
+  "private_history": false,
+  "long_term_memory": false,
+  "relationship_progress": false,
+  "api_keys": false,
+  "stickers_indexed": 693
+}

@@ -1,0 +1,74 @@
+{
+  "3894347764": {
+    "enthusiasm": 78,
+    "affection": 85
+  },
+  "3901000011": {
+    "enthusiasm": 30,
+    "affection": 55,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000012": {
+    "enthusiasm": 35,
+    "affection": 70,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000013": {
+    "enthusiasm": 90,
+    "affection": 75,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000014": {
+    "enthusiasm": 72,
+    "affection": 76,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000015": {
+    "enthusiasm": 60,
+    "affection": 75,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000016": {
+    "enthusiasm": 75,
+    "affection": 75,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000017": {
+    "enthusiasm": 80,
+    "affection": 75,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000018": {
+    "enthusiasm": 58,
+    "affection": 56,
+    "initiative_scale": 1.0,
+    "quiet_until": 0.0,
+    "low_pressure": true
+  },
+  "3901000019": {
+    "enthusiasm": 50,
+    "affection": 72
+  },
+  "10000": {
+    "enthusiasm": 78,
+    "affection": 85
+  },
+  "10001": {
+    "enthusiasm": 78,
+    "affection": 85
+  }
+}
