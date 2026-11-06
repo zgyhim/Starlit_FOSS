@@ -167,3 +167,5 @@ Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebV
 当前版本由 AI 辅助开发完成（DeepSeek V4.1 Flash，2026-11-06），代码仍在持续整理中；这不代表开发者个人的代码水平或能力。
 
 欢迎提交 Issue 或 Pull Request。
+
+更多问题见 [QA.md](QA.md)。
