@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the main window. Extend permissions here as features are added.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
