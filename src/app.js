@@ -8798,6 +8798,7 @@
   }
 
   function fileUrl(it, gid) {
+    if (it && it.url) return resolveAsset(it.url);
     return resolveAsset(`/api/groups/file?groupId=${encodeURIComponent(gid)}`
       + `&file_id=${encodeURIComponent(it.id)}`);
   }
