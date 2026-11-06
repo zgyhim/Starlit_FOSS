@@ -108,6 +108,7 @@
     forwardClose: $('#forwardClose'),
 
     composer: $('#composer'),
+    mentionPopup: $('#mentionPopup'),
     input: $('#input'),
     sendBtn: $('#sendBtn'),
     mobileMoreBtn: $('#mobileMoreBtn'),
@@ -679,6 +680,7 @@
     memberMenuFor: null,        // 成员行操作菜单当前指向的成员对象
     joinRequests: [],           // 待审的入群申请（全局，群行红点用）
     pendingMentions: [],        // 本次输入里 @ 了谁（发送时转成 at 段）
+    mention: { open: false, index: 0, items: [], start: 0, end: 0 },
     replyTo: null,              // 正在引用回复的消息（群里用）
     groupFiles: {},             // gid(str) -> 群文件列表
     groupFileTab: 'file',       // 群文件面板的页签：file / album
@@ -6441,13 +6443,124 @@
     setDraft(k, '');
   }
 
+  // ---------------------------------------------------------- @ 成员补全
+  function mentionMembers() {
+    const detail = curGroupDetail();
+    const members = ((detail && detail.members) || [])
+      .filter((m) => !m.is_me && String(m.userId) !== String(state.me.id))
+      .map((m) => ({ id: String(m.userId), name: String(m.nickname || m.userId) }));
+    if (members.length) return members;
+    return (state.characters || []).map((c) => ({ id: String(c.id), name: c.name }));
+  }
+
+  function closeMention() {
+    state.mention.open = false;
+    state.mention.items = [];
+    if (els.mentionPopup) els.mentionPopup.classList.add('hidden');
+  }
+
+  function renderMention() {
+    const box = els.mentionPopup;
+    if (!box) return;
+    box.innerHTML = '';
+    if (!state.mention.open) {
+      box.classList.add('hidden');
+      return;
+    }
+    state.mention.items.forEach((item, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mention-item' + (index === state.mention.index ? ' active' : '');
+      button.dataset.mentionId = item.id;
+      const avatar = document.createElement('span');
+      avatar.className = 'mention-avatar';
+      avatar.textContent = String(item.name || '?').slice(0, 1);
+      const name = document.createElement('span');
+      name.className = 'mention-name';
+      name.textContent = item.name;
+      button.append(avatar, name);
+      button.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+        applyMention(index);
+      });
+      box.appendChild(button);
+    });
+    box.classList.remove('hidden');
+  }
+
+  function updateMention() {
+    if (!isGroup()) return closeMention();
+    const el = els.input;
+    const caret = el.selectionStart ?? el.value.length;
+    const before = el.value.slice(0, caret);
+    const match = before.match(/(?:^|\s)@([^\s@]{0,24})$/);
+    if (!match) return closeMention();
+    const query = match[1].toLowerCase();
+    const items = mentionMembers()
+      .filter((item) => item.name.toLowerCase().includes(query))
+      .slice(0, 8);
+    if (!items.length) return closeMention();
+    state.mention = {
+      open: true,
+      index: 0,
+      items,
+      start: caret - match[1].length - 1,
+      end: caret,
+    };
+    renderMention();
+  }
+
+  function applyMention(index) {
+    const item = state.mention.items[index];
+    if (!item || !state.mention.open) return;
+    const el = els.input;
+    const { start, end } = state.mention;
+    const text = `@${item.name} `;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    const caret = start + text.length;
+    addMention(item.id, item.name);
+    closeMention();
+    el.focus();
+    try { el.setSelectionRange(caret, caret); } catch (e) { /* ignore */ }
+    autosize();
+    updateSendBtn();
+    saveCurrentDraft();
+  }
+
+  function moveMention(delta) {
+    const size = state.mention.items.length;
+    if (!size) return;
+    state.mention.index = (state.mention.index + delta + size) % size;
+    renderMention();
+  }
+
   els.input.addEventListener('input', () => {
     autosize();
     updateSendBtn();
     saveCurrentDraft();
+    updateMention();
   });
+  els.input.addEventListener('blur', () => setTimeout(closeMention, 150));
+  els.input.addEventListener('click', updateMention);
 
   els.input.addEventListener('keydown', (e) => {
+    if (state.mention.open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveMention(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applyMention(state.mention.index);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMention();
+        return;
+      }
+    }
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
     // 手机端 Enter 只换行，始终保留明确的发送按钮；Ctrl / Command 均可用于桌面发送。
     if (window.matchMedia('(max-width: 880px)').matches) return;
