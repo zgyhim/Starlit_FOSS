@@ -26,6 +26,7 @@
     markRead: (conversation, readTs) => invoke("mark_read", { conversation, readTs }),
     retryReply: (conversation, clientId) => invoke("retry_reply", { conversation, clientId }),
     ping: () => invoke("ping"),
+    mediaStatus: () => invoke("media_status"),
     mediaCacheInfo: () => invoke("media_cache_info"),
     setMediaAutoClear: (enabled) => invoke("set_media_auto_clear", { enabled }),
     clearMediaCache: () => invoke("clear_media_cache"),
