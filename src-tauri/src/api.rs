@@ -81,6 +81,37 @@ fn characters(state: &AppState) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+fn avatar_items(state: &AppState) -> Value {
+    let mut items = serde_json::Map::new();
+    for dir in ["character_avatars", "avatars"] {
+        let root = state.paths.data.join(dir);
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !path.is_file() {
+                continue;
+            }
+            let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif") {
+                continue;
+            }
+            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            items.insert(
+                stem.to_string(),
+                Value::String(format!("starlit://local/{dir}/{name}")),
+            );
+        }
+    }
+    Value::Object(items)
+}
+
 fn groups(state: &AppState) -> Vec<Value> {
     read_json(state, "groups.json")
         .get("groups")
@@ -372,7 +403,7 @@ pub fn api_request(
         "/api/moods" => json!({ "items": {} }),
         "/api/bond" => json!({ "bond": null, "candidates": [] }),
         "/api/presence" => json!({ "status": "online", "label": "在线" }),
-        "/api/avatars" => json!({ "items": {} }),
+        "/api/avatars" => json!({ "items": avatar_items(&state) }),
         "/api/sticker-sets" => json!({ "sets": {} }),
         "/api/character-traits" => json!({ "voice": { "enabled": false } }),
         "/api/settings" => json!({

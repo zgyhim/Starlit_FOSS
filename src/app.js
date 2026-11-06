@@ -782,9 +782,8 @@
 
   const firstChar = (name) => (String(name || '').trim().slice(0, 1) || '星');
 
-  // QQ 头像（和 Stapxs 用的是同一个公开接口）；加载失败就保留文字头像
-  const qqAvatarUrl = (uin, size = 160) =>
-    uin ? `https://q1.qlogo.cn/g?b=qq&s=${size}&nk=${uin}` : '';
+  // 本地头像全部来自 dataRoot，不再请求任何外部头像接口。
+  const qqAvatarUrl = () => '';
 
   // 用户在「聊天设置 → 更换头像」里裁剪上传的自定义头像
   function customAvatarUrl(uin) {
@@ -877,6 +876,7 @@
       state.avatars = (data && typeof data.items === 'object') ? data.items : {};
       refreshOwnerIdentity(false);
       refreshBotAvatars();
+      applyPeerIdentity();
       renderConvList();
       renderContactList();
       applyFavicon();
