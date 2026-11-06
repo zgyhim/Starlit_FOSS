@@ -144,7 +144,13 @@ LAN 同步同样列入不做清单，前端入口已移除。应用不监听任�
 
 **Windows 打不开**
 
-确认已安装 WebView2 Runtime（Win10/11 通常已内置）。
+确认已安装 Microsoft Edge WebView2 Runtime（Win10/11 通常已内置）。
+
+如果缺少，请从微软官方页面获取：
+
+<https://developer.microsoft.com/microsoft-edge/webview2/>
+
+在页面中选择 **Evergreen Standalone Installer**，按系统架构（x64）下载安装，然后重新打开星伴。
 
 ---
 
