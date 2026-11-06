@@ -597,6 +597,17 @@ pub fn auto_clear_enabled(state: &AppState) -> bool {
     kv_get(state, "media.auto_clear_on_exit").as_deref() == Some("1")
 }
 
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> Value {
+    settings_body(&state.config())
+}
+
+#[tauri::command]
+pub fn save_settings(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
+    update_settings(&state, Some(payload.to_string()))
+}
+
 #[tauri::command]
 pub fn media_cache_info(state: State<'_, AppState>) -> Value {
     let (archives, bytes) = crate::media::cache_stats(&state.paths);
@@ -2402,21 +2413,6 @@ pub fn api_request(
         })};
     }
 
-    if path == "/api/settings" {
-        if method == "POST" {
-            return ApiOut {
-                status: 200,
-                body: match update_settings(&state, body) {
-                    Ok(body) => ok(body),
-                    Err(error) => json!({ "ok": false, "error": error }),
-                },
-            };
-        }
-        return ApiOut {
-            status: 200,
-            body: ok(settings_body(&state.config())),
-        };
-    }
     let cfg = state.config();
     let payload = match path {
         "/api/groups" => json!({
