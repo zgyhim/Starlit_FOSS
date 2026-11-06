@@ -9,6 +9,9 @@ use crate::api::Conversation;
 use crate::llm::{self, character_of, insert_reply, persona_of, recent_messages};
 use crate::state::AppState;
 
+const ENERGY_MAX: f64 = 100.0;
+const ENERGY_DECAY_PER_MIN: f64 = 0.6;
+
 fn kv_get(state: &AppState, key: &str) -> Option<String> {
     state
         .db
@@ -32,6 +35,18 @@ fn kv_set(state: &AppState, key: &str, value: &str) {
         )?;
         Ok(())
     });
+}
+
+fn kv_i64(state: &AppState, key: &str, default: i64) -> i64 {
+    kv_get(state, key)
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(default)
+}
+
+fn kv_f64(state: &AppState, key: &str, default: f64) -> f64 {
+    kv_get(state, key)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(default)
 }
 
 fn minutes_of_day(value: &str) -> Option<i64> {
@@ -63,7 +78,31 @@ fn pick_interval(cfg: &crate::config::Config) -> u64 {
         }
         roll -= weight;
     }
-    rand::rng().random_range(20..=120)
+    rand::rng().random_range(rhythm.near[0]..=rhythm.near[1])
+}
+
+/// 能量值：随时间衰减，用户互动时恢复。
+fn current_energy(state: &AppState, now: i64) -> f64 {
+    let stored = kv_f64(state, "autonomy.energy", 60.0);
+    let since = kv_i64(state, "autonomy.energy_ts", now);
+    let decay = ((now - since).max(0) as f64 / 60.0) * ENERGY_DECAY_PER_MIN;
+    (stored - decay).clamp(0.0, ENERGY_MAX)
+}
+
+fn set_energy(state: &AppState, energy: f64) {
+    let now = chrono::Utc::now().timestamp();
+    kv_set(state, "autonomy.energy", &format!("{:.2}", energy.clamp(0.0, ENERGY_MAX)));
+    kv_set(state, "autonomy.energy_ts", &now.to_string());
+}
+
+pub fn on_user_message(state: &AppState) {
+    let now = chrono::Utc::now().timestamp();
+    let energy = current_energy(state, now) + 15.0;
+    set_energy(state, energy);
+    kv_set(state, "autonomy.last_user_ts", &now.to_string());
+    kv_set(state, "autonomy.cold", "0");
+    let silence = state.config().autonomy.silence_min as i64;
+    kv_set(state, "autonomy.silence_min", &silence.to_string());
 }
 
 fn pick_conversation(state: &AppState) -> Option<Conversation> {
@@ -105,16 +144,54 @@ fn next_day_reset(state: &AppState) -> (String, i64) {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let stored_day = kv_get(state, "autonomy.day").unwrap_or_default();
     let count = if stored_day == today {
-        kv_get(state, "autonomy.count")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(0)
+        kv_i64(state, "autonomy.count", 0)
     } else {
         0
     };
     (today, count)
 }
 
-async fn generate(app: &AppHandle, greet: bool) -> Result<(), String> {
+#[derive(Clone, Copy)]
+enum Kind {
+    Greet,
+    Miss,
+    Mood,
+    Digest,
+}
+
+fn instruction(cfg: &crate::config::Config, kind: Kind, owner: &str) -> String {
+    match kind {
+        Kind::Greet => format!(
+            "你刚打开电脑上线，主动和{owner}打个招呼，1-2 句，自然一点，不要提到系统提示。"
+        ),
+        Kind::Miss => format!(
+            "你有点想念{owner}，主动发一句话。可以关心近况或提起想一起做的事，1-2 句，不要腻。"
+        ),
+        Kind::Mood => format!(
+            "你想和{owner}分享此刻的心情或正在做的事，1-2 句，自然一点。"
+        ),
+        Kind::Digest => format!(
+            "用 1-2 句话随口回顾今天和{owner}聊过的事，像突然想起来一样；不要写成报告。"
+        ),
+    }
+}
+
+fn next_checkin_kind(state: &AppState, cfg: &crate::config::Config) -> Kind {
+    if cfg.autonomy.checkin_kinds.is_empty() {
+        return Kind::Miss;
+    }
+    let index = kv_i64(state, "autonomy.checkin_idx", 0);
+    let kinds = &cfg.autonomy.checkin_kinds;
+    let value = kinds[(index as usize) % kinds.len()].as_str();
+    kv_set(state, "autonomy.checkin_idx", &(index + 1).to_string());
+    if value == "mood" {
+        Kind::Mood
+    } else {
+        Kind::Miss
+    }
+}
+
+async fn generate(app: &AppHandle, kind: Kind) -> Result<(), String> {
     let Some(state) = app.try_state::<AppState>() else {
         return Ok(());
     };
@@ -140,14 +217,6 @@ async fn generate(app: &AppHandle, greet: bool) -> Result<(), String> {
         )
     };
 
-    let task = if greet {
-        format!("你刚打开电脑上线，主动和{owner}打个招呼，1-2 句，自然一点，不要提到系统提示。")
-    } else {
-        format!(
-            "现在没有新消息。你想主动找{owner}说点什么，结合最近的聊天或你记得的事，1-2 句，自然一点，不要重复上次的话。"
-        )
-    };
-
     let mut messages = vec![json!({
         "role": "system",
         "content": format!(
@@ -164,7 +233,10 @@ async fn generate(app: &AppHandle, greet: bool) -> Result<(), String> {
             "content": text,
         }));
     }
-    messages.push(json!({ "role": "user", "content": task }));
+    messages.push(json!({
+        "role": "user",
+        "content": instruction(&cfg, kind, &owner),
+    }));
 
     let reply = llm::chat(&cfg, messages).await?;
     let text = reply.trim();
@@ -176,13 +248,81 @@ async fn generate(app: &AppHandle, greet: bool) -> Result<(), String> {
     }
 
     let now = chrono::Utc::now().timestamp();
+    let last_proactive = kv_i64(&state, "autonomy.last_ts", 0);
+    let last_user = kv_i64(&state, "autonomy.last_user_ts", 0);
+    let replied = last_user > last_proactive;
+    let cold = if replied { 0 } else { kv_i64(&state, "autonomy.cold", 0) + 1 };
+
+    let mut silence = if replied {
+        cfg.autonomy.silence_min as f64
+    } else {
+        let previous = kv_f64(&state, "autonomy.silence_min", cfg.autonomy.silence_min as f64);
+        (previous * cfg.autonomy.silence_growth)
+            .clamp(cfg.autonomy.silence_min as f64, cfg.autonomy.silence_max_min as f64)
+    };
+    if !replied && (cold as usize) > cfg.autonomy.cold_streak_limit {
+        let extra = cold as f64 - cfg.autonomy.cold_streak_limit as f64;
+        silence = (silence * cfg.autonomy.silence_growth.powi(extra as i32))
+            .min(cfg.autonomy.silence_max_min as f64);
+    }
+
     kv_set(&state, "autonomy.last_ts", &now.to_string());
+    kv_set(&state, "autonomy.cold", &cold.to_string());
+    kv_set(&state, "autonomy.silence_min", &format!("{silence:.1}"));
+    set_energy(&state, current_energy(&state, now) - 10.0);
     let (today, count) = next_day_reset(&state);
     kv_set(&state, "autonomy.day", &today);
     kv_set(&state, "autonomy.count", &(count + 1).to_string());
-    let interval = pick_interval(&cfg).max(cfg.autonomy.min_gap_min);
+
+    let interval = pick_interval(&cfg).max(cfg.autonomy.min_gap_min).max(silence as u64);
     kv_set(&state, "autonomy.next_ts", &(now + interval as i64 * 60).to_string());
     Ok(())
+}
+
+async fn maybe_digest(app: &AppHandle) -> bool {
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let cfg = state.config();
+    if !cfg.autonomy.digest_enabled {
+        return false;
+    }
+    let now = chrono::Utc::now().timestamp();
+    let last = kv_i64(&state, "autonomy.last_digest_ts", 0);
+    if now - last < cfg.autonomy.digest_interval_min as i64 * 60 {
+        return false;
+    }
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let digest_day = kv_get(&state, "autonomy.digest_day").unwrap_or_default();
+    let mut count = if digest_day == today {
+        kv_i64(&state, "autonomy.digest_count", 0)
+    } else {
+        0
+    };
+    if count >= cfg.autonomy.digest_max_share_per_day as i64 {
+        return false;
+    }
+    let messages: i64 = state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM messages WHERE sent_at > ?1",
+                rusqlite::params![last],
+                |row| row.get(0),
+            )
+        })
+        .unwrap_or(0);
+    if messages < 6 {
+        return false;
+    }
+    if generate(app, Kind::Digest).await.is_err() {
+        return false;
+    }
+    count += 1;
+    kv_set(&state, "autonomy.last_digest_ts", &now.to_string());
+    kv_set(&state, "autonomy.digest_day", &today);
+    kv_set(&state, "autonomy.digest_count", &count.to_string());
+    true
 }
 
 async fn tick(app: &AppHandle) {
@@ -199,6 +339,13 @@ async fn tick(app: &AppHandle) {
             return;
         }
     }
+
+    let energy = current_energy(&state, now);
+    if energy < cfg.autonomy.energy_threshold as f64 {
+        kv_set(&state, "autonomy.next_ts", &(now + 600).to_string());
+        return;
+    }
+
     if let Some(last) = kv_get(&state, "autonomy.last_ts").and_then(|v| v.parse::<i64>().ok()) {
         if now - last < cfg.autonomy.min_gap_min as i64 * 60 {
             return;
@@ -208,18 +355,27 @@ async fn tick(app: &AppHandle) {
     if count >= cfg.autonomy.daily_max as i64 {
         return;
     }
-    // 用户刚说过话时先别插嘴。
     if let Some(last_msg) = kv_get(&state, "autonomy.last_user_ts").and_then(|v| v.parse::<i64>().ok()) {
         if now - last_msg < 120 {
             return;
         }
     }
-    if rand::rng().random::<f64>() < cfg.autonomy.skip_probability {
+
+    // 能量越低越容易放弃主动开口。
+    let skip_probability = (cfg.autonomy.skip_probability
+        + (1.0 - energy / ENERGY_MAX) * cfg.autonomy.state_influence)
+        .clamp(0.0, 0.95);
+    if rand::rng().random::<f64>() < skip_probability {
         let interval = pick_interval(&cfg).max(cfg.autonomy.min_gap_min);
         kv_set(&state, "autonomy.next_ts", &(now + interval as i64 * 60).to_string());
         return;
     }
-    let _ = generate(app, false).await;
+
+    if maybe_digest(app).await {
+        return;
+    }
+    let kind = next_checkin_kind(&state, &cfg);
+    let _ = generate(app, kind).await;
 }
 
 pub fn spawn(app: AppHandle) {
@@ -242,7 +398,7 @@ pub fn spawn(app: AppHandle) {
                     .and_then(|v| v.parse::<i64>().ok())
                     .unwrap_or(0);
                 if now - last >= cfg.autonomy.min_gap_min as i64 * 60 {
-                    let _ = generate(&app, true).await;
+                    let _ = generate(&app, Kind::Greet).await;
                 }
             }
         }

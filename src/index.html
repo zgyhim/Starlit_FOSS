@@ -883,38 +883,6 @@
         </div>
       </div>
 
-      <div class="cs-section" id="csVoiceSection">
-        <div class="cs-label">角色语音</div>
-        <label class="cs-pressure-row" for="csVoiceEnabled">
-          <span>
-            <strong>让她说给你听</strong>
-            <small>启用后，她的文字消息会显示“朗读”；语音只按需合成，不会保存进聊天记录。</small>
-          </span>
-          <span class="switch"><input type="checkbox" id="csVoiceEnabled"><i></i></span>
-        </label>
-        <label class="cs-pressure-row" for="csVoiceAuto">
-          <span>
-            <strong>自动朗读新回复</strong>
-            <small>仅在当前私聊且页面可见时播放；切走、后台和其他角色消息都不会出声。</small>
-          </span>
-          <span class="switch"><input type="checkbox" id="csVoiceAuto"><i></i></span>
-        </label>
-        <label class="cs-quiet-row cs-voice-id-row" for="csVoiceId">
-          <span>音色 ID</span>
-          <input class="cs-input" id="csVoiceId" maxlength="80" autocomplete="off"
-                 spellcheck="false" placeholder="例如：alloy 或你的音色 ID">
-        </label>
-        <label class="trait-row initiative-row cs-voice-speed-row">
-          <span class="trait-name">语速</span>
-          <input type="range" id="csVoiceSpeed" min="0.5" max="2" step="0.1" value="1">
-          <span class="trait-val" id="csVoiceSpeedVal">1.0×</span>
-        </label>
-        <p class="cs-hint" id="csVoiceHint">先在全局设置中配置语音服务，再在这里为这个角色选择音色。</p>
-        <div class="trait-actions">
-          <button class="ghost mini-btn" id="csVoiceSave" type="button">保存语音设置</button>
-        </div>
-      </div>
-
       <div class="cs-section">
         <div class="cs-label"><span>聊天背景</span></div>
         <div class="chat-bg-opts" id="csChatBgPresets"></div>
@@ -1532,10 +1500,6 @@
         <div><strong>数据备份</strong><span>包含聊天、回忆、人设和群数据，不含密钥；恢复前请先停止星伴</span></div>
         <button class="ghost" id="settingsBackup" type="button">下载备份</button>
       </div>
-      <div class="setting-row hidden" id="settingsLanSyncRow">
-        <div><strong>手机与电脑同步</strong><span>同一 Wi-Fi 自动发现；发送前自动备份，无需云端</span></div>
-        <button class="ghost" id="settingsLanSync" type="button">打开</button>
-      </div>
       <section class="update-settings" id="settingsCacheSection" aria-label="本地缓存">
         <div class="setting-row">
           <div><strong>解压缓存</strong><span id="settingsCacheState">正在读取…</span></div>
@@ -1610,35 +1574,6 @@
                 <button class="btn-primary mini-btn" id="settingsLlmSave">保存模型设置</button>
               </div>
               <p class="cs-hint diagnostic-test-result" id="settingsLlmTestState" aria-live="polite">只有点击「实测模型」才会自动保存当前表单，并在保存成功后发送一条固定测试消息。</p>
-            </div>
-          </div>
-          <div class="setting-row column">
-            <div><strong>角色语音服务</strong><span>OpenAI 兼容 /v1/audio/speech · 按需合成，音频不写入聊天或备份</span></div>
-            <div class="setting-stack">
-              <select class="cs-input" id="settingsTtsMode" aria-label="语音服务模式">
-                <option value="off">关闭语音服务</option>
-                <option value="local">本地语音服务</option>
-                <option value="cloud">云端语音服务</option>
-              </select>
-              <input class="cs-input" id="settingsTtsEndpoint" inputmode="url" autocomplete="off"
-                     spellcheck="false" placeholder="完整的 /v1/audio/speech 接口地址">
-              <input class="cs-input" id="settingsTtsModel" autocomplete="off"
-                     spellcheck="false" placeholder="语音模型，例如：tts-1">
-              <div class="password-field">
-                <input class="cs-input" id="settingsTtsApiKey" type="password" autocomplete="off"
-                       placeholder="API Key（留空则不修改）">
-                <button class="password-toggle" type="button" data-target="settingsTtsApiKey" aria-label="显示语音服务 API Key" aria-pressed="false">显示</button>
-              </div>
-              <input class="cs-input" id="settingsTtsVoice" autocomplete="off" maxlength="120"
-                     placeholder="实测音色 ID（仅用于诊断，不改变角色设置）">
-              <p class="cs-hint">语音接口独立于聊天模型。请选择服务商文档明确标注支持 OpenAI 兼容语音合成的完整地址；DeepSeek、Qwen、Kimi、GLM 的聊天预设不会自动冒充语音接口。</p>
-              <p class="cs-hint" id="settingsTtsPrivacy">只发送被朗读的文字、音色和语速，不发送人设、记忆或聊天上下文。</p>
-              <div class="setting-inline">
-                <span class="cs-hint" id="settingsTtsState">语音服务已关闭</span>
-                <button class="ghost mini-btn" id="settingsTtsTest" type="button">实测语音</button>
-                <button class="btn-primary mini-btn" id="settingsTtsSave">保存语音服务</button>
-              </div>
-              <p class="cs-hint diagnostic-test-result" id="settingsTtsTestState" aria-live="polite">实测使用已保存配置、固定短句和所填音色；音频不保存，也不依赖角色语音开关。</p>
             </div>
           </div>
           <div class="setting-row column diagnostics-block">

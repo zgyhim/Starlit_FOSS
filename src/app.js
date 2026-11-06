@@ -9682,6 +9682,7 @@
   }
 
   function updateTtsModeHint() {
+    if (!els.settingsTtsMode) return;
     const mode = els.settingsTtsMode.value;
     if (mode === 'local') {
       els.settingsTtsEndpoint.placeholder = 'http://127.0.0.1:端口/v1/audio/speech';
@@ -9696,6 +9697,7 @@
   }
 
   function applyTtsSettings(tts = {}) {
+    if (!els.settingsTtsMode) return;
     state.ttsSettings = {
       mode: tts.mode || 'off',
       endpoint: tts.endpoint || '',
@@ -10521,15 +10523,17 @@
   els.settingsApiKey.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); saveLlmSettings(); }
   });
-  els.settingsTtsSave.addEventListener('click', saveTtsSettings);
-  els.settingsTtsTest.addEventListener('click', () => runDiagnosticTest('tts'));
-  els.settingsTtsMode.addEventListener('change', () => {
-    updateTtsModeHint();
-    els.settingsTtsState.textContent = '有尚未保存的语音服务修改';
-  });
-  els.settingsTtsApiKey.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); saveTtsSettings(); }
-  });
+  if (els.settingsTtsMode) {
+    els.settingsTtsSave.addEventListener('click', saveTtsSettings);
+    els.settingsTtsTest.addEventListener('click', () => runDiagnosticTest('tts'));
+    els.settingsTtsMode.addEventListener('change', () => {
+      updateTtsModeHint();
+      els.settingsTtsState.textContent = '有尚未保存的语音服务修改';
+    });
+    els.settingsTtsApiKey.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); saveTtsSettings(); }
+    });
+  }
   els.settingsAddCharacter.addEventListener('click', openCharacterModal);
   async function loadMediaCacheInfo() {
     try {
@@ -10963,6 +10967,7 @@
   }
 
   function updateVoiceControls() {
+    if (!els.csVoiceEnabled) return;
     const enabled = els.csVoiceEnabled.checked;
     if (!enabled) els.csVoiceAuto.checked = false;
     els.csVoiceAuto.disabled = !enabled;
@@ -10980,6 +10985,7 @@
   }
 
   function setVoiceControls(value) {
+    if (!els.csVoiceEnabled) return;
     const voice = normalizeVoice(value);
     els.csVoiceEnabled.checked = voice.enabled;
     els.csVoiceAuto.checked = voice.auto;
@@ -11247,10 +11253,12 @@
   });
   els.csQuietFor.addEventListener('change', updateQuietHint);
   els.csTraitSave.addEventListener('click', saveTraits);
-  els.csVoiceEnabled.addEventListener('change', updateVoiceControls);
-  els.csVoiceAuto.addEventListener('change', updateVoiceControls);
-  els.csVoiceSpeed.addEventListener('input', updateVoiceControls);
-  els.csVoiceSave.addEventListener('click', saveVoiceSettings);
+  if (els.csVoiceEnabled) {
+    els.csVoiceEnabled.addEventListener('change', updateVoiceControls);
+    els.csVoiceAuto.addEventListener('change', updateVoiceControls);
+    els.csVoiceSpeed.addEventListener('input', updateVoiceControls);
+    els.csVoiceSave.addEventListener('click', saveVoiceSettings);
+  }
   els.csChatBgPick.addEventListener('click', () => {
     if (!state.chatBackgroundBusy) els.csChatBgInput.value = '';
   });
