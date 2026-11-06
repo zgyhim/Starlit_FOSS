@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod db;
 mod ipc;
+mod lock;
 mod logging;
 mod media;
 mod paths;
@@ -63,6 +64,7 @@ pub fn run() {
                 .body(bytes)
                 .expect("valid response")
         })
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -73,13 +75,29 @@ pub fn run() {
         .setup(|app| {
             let paths = paths::Paths::resolve(app.handle())?;
             paths.ensure()?;
+
+            let instance_lock = match lock::InstanceLock::acquire(&paths.root) {
+                Ok(lock) => lock,
+                Err(lock::LockError::Busy) => {
+                    use tauri_plugin_dialog::DialogExt;
+                    let handle = app.handle().clone();
+                    app.dialog()
+                        .message("系统文件正在被占用，为避免数据损坏，请退出另一个实例")
+                        .title("星伴")
+                        .show(move |_| {
+                            handle.exit(1);
+                        });
+                    return Ok(());
+                }
+            };
+
             logging::init(&paths.log_file())?;
             paths.seed()?;
             let config = paths.load_config()?;
             let db = db::Db::open(&paths.db_file())?;
             let log_file = paths.log_file();
             let paths_for_media = paths.clone();
-            app.manage(state::AppState::new(paths, config, db));
+            app.manage(state::AppState::new(paths, config, db, instance_lock));
 
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -87,7 +105,7 @@ pub fn run() {
                 use tauri::Manager;
 
                 let target = handle.clone();
-                media::extract_all(&paths_for_media, |done, total| {
+                let errors = media::extract_all(&paths_for_media, |done, total| {
                     use tauri::Manager;
                     if let Some(state) = target.try_state::<state::AppState>() {
                         state.media_done.store(done, Ordering::Relaxed);
@@ -96,6 +114,9 @@ pub fn run() {
                 });
                 state::append_log(&log_file, "media cache ready");
                 if let Some(state) = handle.try_state::<state::AppState>() {
+                    if !errors.is_empty() {
+                        *state.media_error.lock().expect("media error lock") = errors.join("; ");
+                    }
                     state.media_ready.store(true, Ordering::Relaxed);
                 }
                 let _ = tauri::Emitter::emit(&handle, "media:ready", true);
@@ -137,6 +158,7 @@ pub fn run() {
                 if pending || api::auto_clear_enabled(&state) {
                     let _ = media::clear_cache(&state.paths);
                 }
+                lock::release(&state.paths.root);
             }
         }
     });

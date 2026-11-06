@@ -128,10 +128,11 @@ fn extract_one(
 }
 
 /// 解压全部资源包，并在每完成一个后回调进度。
-pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) {
+pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) -> Vec<String> {
+    let mut errors = Vec::new();
     let Some(manifest) = load_manifest(&paths.resources) else {
         progress(0, 0);
-        return;
+        return errors;
     };
     let total: u64 = manifest.archives.iter().map(|entry| entry.uncompressed).sum();
     let total = if total == 0 { manifest.archives.len() as u64 } else { total };
@@ -145,12 +146,14 @@ pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) {
         };
         if let Err(error) = extract_one(paths, entry, &mut on_bytes) {
             crate::state::append_log(&paths.log_file(), &format!("media: {error}"));
+            errors.push(format!("{}: {error}", entry.name));
         }
         if entry.uncompressed == 0 {
             done = done.saturating_add(1);
             progress(done.min(total) as usize, total as usize);
         }
     }
+    errors
 }
 
 /// 删除所有由资源包解压出来的文件，保留用户自己上传的内容。
