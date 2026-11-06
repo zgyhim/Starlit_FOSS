@@ -9,7 +9,7 @@ use crate::state::AppState;
 
 const RECENT_MESSAGES: i64 = 24;
 
-fn character_of(state: &AppState, id: &str) -> (String, String) {
+pub(crate) fn character_of(state: &AppState, id: &str) -> (String, String) {
     let path = state.paths.data.join("characters.json");
     let Ok(text) = std::fs::read_to_string(path) else {
         return ("角色".into(), id.into());
@@ -28,7 +28,7 @@ fn character_of(state: &AppState, id: &str) -> (String, String) {
     ("角色".into(), id.into())
 }
 
-fn persona_of(state: &AppState, name: &str) -> String {
+pub(crate) fn persona_of(state: &AppState, name: &str) -> String {
     let dir = state.paths.persona.join("characters").join(name);
     let mut parts = Vec::new();
     for file in ["persona.md", "interests.md"] {
@@ -46,7 +46,7 @@ fn persona_of(state: &AppState, name: &str) -> String {
     parts.join("\n\n")
 }
 
-fn recent_messages(state: &AppState, conv: &Conversation, limit: i64) -> Vec<(String, String)> {
+pub(crate) fn recent_messages(state: &AppState, conv: &Conversation, limit: i64) -> Vec<(String, String)> {
     let kind = if conv.kind == "Group" { "Group" } else { "Private" };
     state
         .db
@@ -69,7 +69,7 @@ fn recent_messages(state: &AppState, conv: &Conversation, limit: i64) -> Vec<(St
         .collect()
 }
 
-fn insert_reply(state: &AppState, conv: &Conversation, name: &str, text: &str) -> Option<Message> {
+pub(crate) fn insert_reply(state: &AppState, conv: &Conversation, name: &str, text: &str) -> Option<Message> {
     let now = chrono::Utc::now().timestamp();
     let parts = json!([{ "kind": "text", "text": text }]);
     let parts_json = serde_json::to_string(&parts).ok()?;
@@ -107,7 +107,7 @@ fn insert_reply(state: &AppState, conv: &Conversation, name: &str, text: &str) -
     })
 }
 
-fn split_reply(text: &str, threshold: usize, max_chunks: usize) -> Vec<String> {
+pub(crate) fn split_reply(text: &str, threshold: usize, max_chunks: usize) -> Vec<String> {
     let text = text.trim();
     if text.is_empty() {
         return Vec::new();
@@ -151,10 +151,60 @@ fn split_reply(text: &str, threshold: usize, max_chunks: usize) -> Vec<String> {
     chunks
 }
 
-fn delay_ms(range: [u64; 2]) -> u64 {
+pub(crate) fn delay_ms(range: [u64; 2]) -> u64 {
     let low = range[0].min(range[1]);
     let high = range[1].max(range[0]);
     rand::rng().random_range(low..=high)
+}
+
+/// 单次非流式补全，供回复与主动消息共用。
+pub async fn chat(
+    cfg: &crate::config::Config,
+    messages: Vec<Value>,
+) -> Result<String, String> {
+    if cfg.llm.api_key.trim().is_empty() {
+        return Err("missing_api_key".into());
+    }
+    let base = cfg.llm.base_url.trim_end_matches('/');
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(cfg.llm.timeout.max(1)))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut body = json!({
+        "model": cfg.llm.model,
+        "messages": messages,
+        "temperature": cfg.llm.temperature,
+        "stream": false,
+    });
+    if !cfg.llm.reasoning_effort.trim().is_empty() {
+        body["reasoning_effort"] = json!(cfg.llm.reasoning_effort.trim());
+    }
+    let response = client
+        .post(format!("{base}/chat/completions"))
+        .bearer_auth(&cfg.llm.api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    let body: Value = response.json().await.unwrap_or_else(|_| json!({}));
+    if !status.is_success() {
+        let message = body
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("模型请求失败");
+        return Err(message.to_string());
+    }
+    Ok(body
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string())
 }
 
 fn emit_status(app: &AppHandle, conv: &Conversation, message_id: i64, status: &str, reason: &str) {
@@ -169,7 +219,7 @@ fn emit_status(app: &AppHandle, conv: &Conversation, message_id: i64, status: &s
     );
 }
 
-pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, _user_text: String) {
+pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, user_text: String) {
     tauri::async_runtime::spawn(async move {
         let Some(state) = app.try_state::<AppState>() else {
             return;
@@ -184,12 +234,21 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, _user_te
         let persona = persona_of(&state, &slug);
         let history = recent_messages(&state, &conv, RECENT_MESSAGES);
         let owner = cfg.qq.server.owner_nickname.clone();
+        let memories = crate::memory::recall(&state, &user_text, cfg.memory.recall_top_k);
+        let memory_block = if memories.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n\n你可能记得这些事：\n{}",
+                memories.iter().map(|m| format!("- {m}")).collect::<Vec<_>>().join("\n")
+            )
+        };
 
         let mut messages = vec![json!({
             "role": "system",
             "content": format!(
                 "你是{name}，正在和{owner}私聊。以下是你的人设资料，请始终以{name}的身份说话：\n\n{persona}\n\n\
-                 要求：口语化、自然、简短，像真实聊天；不要使用 Markdown；不要解释你是 AI；不要复述人设。"
+                 要求：口语化、自然、简短，像真实聊天；不要使用 Markdown；不要解释你是 AI；不要复述人设。{memory_block}"
             ),
         })];
         for (direction, text) in history {
@@ -205,60 +264,10 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, _user_te
         tokio::time::sleep(Duration::from_millis(400)).await;
         emit_status(&app, &conv, message_id, "processing", "");
 
-        let base = cfg.llm.base_url.trim_end_matches('/');
-        let url = format!("{base}/chat/completions");
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(cfg.llm.timeout.max(1)))
-            .build()
-        {
-            Ok(client) => client,
+        let reply = match chat(&cfg, messages).await {
+            Ok(text) => text,
             Err(error) => {
-                emit_status(&app, &conv, message_id, "failed", &format!("client: {error}"));
-                return;
-            }
-        };
-        let response = client
-            .post(&url)
-            .bearer_auth(&cfg.llm.api_key)
-            .json(&{
-                let mut body = json!({
-                    "model": cfg.llm.model,
-                    "messages": messages,
-                    "temperature": cfg.llm.temperature,
-                    "stream": false,
-                });
-                if !cfg.llm.reasoning_effort.trim().is_empty() {
-                    body["reasoning_effort"] = json!(cfg.llm.reasoning_effort.trim());
-                }
-                body
-            })
-            .send()
-            .await;
-
-        let reply = match response {
-            Ok(response) => {
-                let status = response.status();
-                let body: Value = response.json().await.unwrap_or_else(|_| json!({}));
-                if !status.is_success() {
-                    let message = body
-                        .get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("模型请求失败");
-                    emit_status(&app, &conv, message_id, "failed", message);
-                    return;
-                }
-                body.get("choices")
-                    .and_then(Value::as_array)
-                    .and_then(|choices| choices.first())
-                    .and_then(|choice| choice.get("message"))
-                    .and_then(|message| message.get("content"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string()
-            }
-            Err(error) => {
-                emit_status(&app, &conv, message_id, "failed", &error.to_string());
+                emit_status(&app, &conv, message_id, "failed", &error);
                 return;
             }
         };
@@ -279,5 +288,7 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, _user_te
             }
         }
         emit_status(&app, &conv, message_id, "replied", "");
+        let reply_text = chunks.join("");
+        let _ = crate::memory::extract(&state, &name, &user_text, &reply_text).await;
     });
 }

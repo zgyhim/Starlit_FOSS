@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -409,6 +409,16 @@ pub fn send_message(
         Ok(conn.last_insert_rowid())
     })?;
 
+    let now = chrono::Utc::now().timestamp();
+    let _ = state.db.with(|conn| {
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_at) VALUES ('autonomy.last_user_ts', ?1, ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![now.to_string()],
+        )?;
+        Ok(())
+    });
+
     let reply_text = text.clone();
     let reply_conversation = payload.conversation.clone();
     crate::llm::spawn_reply(app, reply_conversation, id, reply_text);
@@ -635,6 +645,22 @@ fn ok(mut body: Value) -> Value {
     body
 }
 
+fn query_params(url: &str) -> HashMap<String, String> {
+    let Some((_, query)) = url.split_once('?') else {
+        return HashMap::new();
+    };
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| {
+            (
+                percent_encoding::percent_decode_str(key).decode_utf8_lossy().to_string(),
+                percent_encoding::percent_decode_str(value).decode_utf8_lossy().to_string(),
+            )
+        })
+        .collect()
+}
+
 fn mask_key(key: &str) -> String {
     let key = key.trim();
     if key.len() <= 4 {
@@ -712,6 +738,65 @@ pub fn api_request(
     body: Option<String>,
 ) -> ApiOut {
     let path = url.split('?').next().unwrap_or("");
+    if path == "/api/memories" {
+        let params = query_params(&url);
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let body = match method.as_str() {
+            "GET" => {
+                let offset = params.get("offset").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+                let limit = params.get("limit").and_then(|v| v.parse::<i64>().ok()).unwrap_or(50);
+                let query = params.get("q").cloned().unwrap_or_default();
+                match crate::memory::list(&state, &query, offset, limit) {
+                    Ok((items, total)) => json!({
+                        "ok": true, "items": items, "total": total,
+                        "offset": offset, "limit": limit,
+                    }),
+                    Err(error) => json!({ "ok": false, "error": error }),
+                }
+            }
+            "POST" => {
+                let text = payload.get("text").and_then(Value::as_str).unwrap_or("");
+                let category = payload.get("category").and_then(Value::as_str).unwrap_or("auto");
+                let pinned = payload.get("pinned").and_then(Value::as_bool).unwrap_or(false);
+                match crate::memory::create(&state, text, category, pinned) {
+                    Ok(id) => json!({ "ok": true, "id": id }),
+                    Err(error) => json!({ "ok": false, "error": error }),
+                }
+            }
+            "PATCH" => {
+                let id = payload.get("id").and_then(Value::as_str)
+                    .and_then(|v| v.parse::<i64>().ok());
+                match id {
+                    Some(id) => {
+                        let text = payload.get("text").and_then(Value::as_str);
+                        let category = payload.get("category").and_then(Value::as_str);
+                        let pinned = payload.get("pinned").and_then(Value::as_bool);
+                        let corrected = payload.get("correct").and_then(Value::as_bool).unwrap_or(false);
+                        match crate::memory::update(&state, id, text, category, pinned, corrected) {
+                            Ok(()) => json!({ "ok": true }),
+                            Err(error) => json!({ "ok": false, "error": error }),
+                        }
+                    }
+                    None => json!({ "ok": false, "error": "无效记忆 ID" }),
+                }
+            }
+            "DELETE" => {
+                let id = payload.get("id").and_then(Value::as_str)
+                    .and_then(|v| v.parse::<i64>().ok());
+                match id {
+                    Some(id) => match crate::memory::delete(&state, id) {
+                        Ok(()) => json!({ "ok": true }),
+                        Err(error) => json!({ "ok": false, "error": error }),
+                    },
+                    None => json!({ "ok": false, "error": "无效记忆 ID" }),
+                }
+            }
+            _ => json!({ "ok": false, "error": "不支持的方法" }),
+        };
+        return ApiOut { status: 200, body };
+    }
+
     if path == "/api/settings" {
         if method == "POST" {
             return ApiOut {
