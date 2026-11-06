@@ -10011,13 +10011,8 @@
         }
         result.textContent = '当前模型配置已保存，正在发送固定测试消息…';
       }
-      const res = await apiRequest('/api/diagnostics/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+      const out = await api.diagnosticsTest(target);
+      if (!out || out.ok === false) throw new Error(out?.error || '实测失败');
       result.classList.toggle('success', out.success === true);
       result.classList.toggle('error', out.success !== true);
       result.textContent = out.message || (out.success ? '实测成功' : '实测未通过');
@@ -10199,21 +10194,12 @@
     els.settingsBackup.disabled = true;
     els.settingsBackup.textContent = '正在备份…';
     try {
-      const res = await apiRequest('/api/backup', { cache: 'no-store' });
-      if (!res.ok) {
-        const out = await res.json().catch(() => ({}));
-        throw new Error(out.error || ('HTTP ' + res.status));
-      }
-      const disposition = res.headers.get('Content-Disposition') || '';
-      const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-      const plain = disposition.match(/filename="?([^";]+)"?/i);
-      let filename = 'companion-backup.zip';
-      try {
-        filename = encoded ? decodeURIComponent(encoded[1]) :
-          (plain ? plain[1] : filename);
-      } catch (e) { /* 保留安全默认文件名 */ }
-      const blob = await res.blob();
-      const savedName = await downloadBlob(blob, filename);
+      const out = await api.createBackup();
+      const binary = atob(out.data || '');
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/zip' });
+      const savedName = await downloadBlob(blob, out.filename || 'companion-backup.zip');
       toast(`备份已保存：${savedName}`);
     } catch (e) {
       toast('备份失败：' + (e?.message || e));
@@ -10511,10 +10497,7 @@
     const seq = state.characterRequestSeq;
     setCharacterBusy('generate', '正在搜索资料、提炼性格与口癖；此阶段不会创建正式角色。');
     try {
-      const out = await characterCardRequest('/api/character-drafts/generate', {
-        method: 'POST',
-        body: JSON.stringify({ name, avatar: state.pendingCharacterAvatar }),
-      });
+      const out = await api.characterDraftGenerate(name, state.pendingCharacterAvatar);
       if (seq !== state.characterRequestSeq) return;
       applyCharacterDraft(out.draft);
       setCharacterStatus('草稿已生成。可以修改人设、先试聊，再决定是否正式添加。');
@@ -10562,10 +10545,7 @@
       if (seq !== state.characterRequestSeq) return;
       setCharacterBusy('chat', '她正在回复；不会保存记忆、画像或情绪。');
       const draft = state.characterDraft;
-      const out = await characterCardRequest('/api/character-drafts/chat', {
-        method: 'POST',
-        body: JSON.stringify({ draft_id: draft.id, revision: draft.revision, text }),
-      });
+      const out = await api.characterDraftChat(draft.id, draft.revision, text);
       if (seq !== state.characterRequestSeq) return;
       state.characterTrial = Array.isArray(out.trial) ? out.trial : [];
       els.characterTrialInput.value = '';

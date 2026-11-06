@@ -6,6 +6,12 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::paths::Paths;
 
+pub struct MergeState {
+    pub generation: u64,
+    pub first_ts: i64,
+    pub count: usize,
+}
+
 pub struct AppState {
     pub paths: Paths,
     pub config: RwLock<Config>,
@@ -19,6 +25,7 @@ pub struct AppState {
     pub media_total: AtomicUsize,
     pub media_error: Mutex<String>,
     pub character_drafts: Mutex<HashMap<String, serde_json::Value>>,
+    pub merge: Mutex<HashMap<String, MergeState>>,
     pub _instance_lock: crate::lock::InstanceLock,
 }
 
@@ -40,6 +47,7 @@ impl AppState {
             media_total: AtomicUsize::new(0),
             media_error: Mutex::new(String::new()),
             character_drafts: Mutex::new(HashMap::new()),
+            merge: Mutex::new(HashMap::new()),
             _instance_lock: instance_lock,
         }
     }

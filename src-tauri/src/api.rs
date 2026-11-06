@@ -414,9 +414,13 @@ pub fn send_message(
 
     crate::autonomy::on_user_message(&state);
 
+    crate::pipeline::reset_followup(&state, &payload.conversation);
+    if payload.conversation.kind == "Private" {
+        touch_bond(&state, &payload.conversation.id);
+    }
     let reply_text = text.clone();
     let reply_conversation = payload.conversation.clone();
-    crate::llm::spawn_reply(app, reply_conversation, id, reply_text);
+    crate::pipeline::schedule_reply(app, reply_conversation, id, reply_text);
 
     Ok(Message {
         id,
@@ -1053,6 +1057,55 @@ fn query_params(url: &str) -> HashMap<String, String> {
         .collect()
 }
 
+fn touch_bond(state: &AppState, character_id: &str) {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let inc_key = format!("bond.inc.{character_id}.{today}");
+    let count = state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                rusqlite::params![inc_key],
+                |row| row.get::<_, String>(0),
+            )
+        })
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    if count >= 3 {
+        return;
+    }
+    let key = format!("bond.{character_id}");
+    let mut value: Value = state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get::<_, String>(0),
+            )
+        })
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| json!({ "affection": 0, "since": 0, "bound": false }));
+    let affection = value.get("affection").and_then(Value::as_i64).unwrap_or(0) + 1;
+    value["affection"] = json!(affection.min(100));
+    let now = chrono::Utc::now().timestamp();
+    let _ = state.db.with(|conn| {
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![format!("bond.{character_id}"), serde_json::to_string(&value).unwrap_or_default(), now],
+        )?;
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![inc_key, (count + 1).to_string(), now],
+        )?;
+        Ok(())
+    });
+}
+
 fn mask_key(key: &str) -> String {
     let key = key.trim();
     if key.len() <= 4 {
@@ -1101,6 +1154,186 @@ fn update_settings(state: &AppState, body: Option<String>) -> Result<Value, Stri
     crate::paths::write_config(&state.paths.config_file(), &cfg)?;
     *state.config.write().map_err(|e| e.to_string())? = cfg.clone();
     Ok(settings_body(&cfg))
+}
+
+
+#[tauri::command]
+pub async fn character_draft_chat(
+    state: State<'_, AppState>,
+    draft_id: String,
+    revision: Option<i64>,
+    text: String,
+) -> Result<Value, String> {
+    let _ = revision;
+    let draft = {
+        let drafts = state.character_drafts.lock().map_err(|e| e.to_string())?;
+        drafts.get(&draft_id).cloned().ok_or("草稿不存在")?
+    };
+    let cfg = state.config();
+    let name = draft.get("name").and_then(Value::as_str).unwrap_or("角色");
+    let persona = draft.get("persona_md").and_then(Value::as_str).unwrap_or("");
+    let mut trial = draft.get("trial").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut messages = vec![json!({
+        "role": "system",
+        "content": format!(
+            "你是{name}。以下是你的人设：\n{persona}\n\n要求：以{name}的身份自然回复，口语化、简短；不要解释你是 AI。"
+        ),
+    })];
+    for turn in &trial {
+        let role = turn.get("role").and_then(Value::as_str).unwrap_or("assistant");
+        let content = turn.get("text").and_then(Value::as_str).unwrap_or("");
+        if !content.is_empty() {
+            messages.push(json!({
+                "role": if role == "user" { "user" } else { "assistant" },
+                "content": content,
+            }));
+        }
+    }
+    messages.push(json!({ "role": "user", "content": text }));
+    let reply = crate::llm::chat(&cfg, messages).await?;
+    trial.push(json!({ "role": "user", "text": text }));
+    trial.push(json!({ "role": "assistant", "text": reply.trim() }));
+    if trial.len() > 20 {
+        let drain = trial.len() - 20;
+        trial.drain(0..drain);
+    }
+    if let Ok(mut drafts) = state.character_drafts.lock() {
+        if let Some(item) = drafts.get_mut(&draft_id) {
+            item["trial"] = json!(trial);
+        }
+    }
+    Ok(json!({ "ok": true, "trial": trial }))
+}
+
+#[tauri::command]
+pub async fn character_draft_generate(
+    state: State<'_, AppState>,
+    name: String,
+    avatar: Option<String>,
+) -> Result<Value, String> {
+    let cfg = state.config();
+    let messages = vec![json!({
+        "role": "user",
+        "content": format!(
+            "请为角色「{name}」生成一份中文人设，使用 Markdown。包含：是谁、说话方式、性格、喜欢/讨厌、聊天习惯。\n\
+             只输出人设正文，不要解释，不要编造现实人物隐私。"
+        ),
+    })];
+    let persona = crate::llm::chat(&cfg, messages).await?;
+    let draft = json!({
+        "id": format!("draft-{}", chrono::Utc::now().timestamp_millis()),
+        "revision": 1,
+        "name": name,
+        "series": "",
+        "aliases": [],
+        "summary": "",
+        "persona_md": persona.trim(),
+        "interests": [],
+        "avatar": json!(avatar),
+        "trial": [],
+    });
+    let id = draft.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    state.character_drafts.lock().map_err(|e| e.to_string())?.insert(id, draft.clone());
+    Ok(json!({ "ok": true, "draft": draft }))
+}
+
+#[tauri::command]
+pub async fn diagnostics_test(
+    state: State<'_, AppState>,
+    target: String,
+) -> Result<Value, String> {
+    if target != "llm" {
+        return Ok(json!({ "ok": false, "error": "该目标已停用" }));
+    }
+    let cfg = state.config();
+    let messages = vec![json!({ "role": "user", "content": "请回复 OK 两个字母。" })];
+    match crate::llm::chat(&cfg, messages).await {
+        Ok(text) => Ok(json!({
+            "ok": true, "success": !text.trim().is_empty(),
+            "message": format!("模型返回：{}", text.trim().chars().take(60).collect::<String>()),
+        })),
+        Err(error) => Ok(json!({
+            "ok": true, "success": false, "message": format!("实测失败：{error}")
+        })),
+    }
+}
+
+
+fn add_zip_dir(
+    zip: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>,
+    root: &std::path::Path,
+    prefix: &str,
+) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let archive_path = format!("{prefix}/{name}");
+        if path.is_dir() {
+            add_zip_dir(zip, &path, &archive_path)?;
+        } else if path.is_file() {
+            use std::io::Write;
+            let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+            zip.start_file(archive_path, zip::write::SimpleFileOptions::default())
+                .map_err(|e| e.to_string())?;
+            zip.write_all(&data).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_backup(state: State<'_, AppState>) -> Result<Value, String> {
+    let _ = state.db.with(|conn| {
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    });
+    let bytes = {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        use std::io::Write;
+
+        for file in ["characters.json", "groups.json", "presence.json", "character_traits.json"] {
+            let path = state.paths.data.join(file);
+            if path.is_file() {
+                let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+                zip.start_file(format!("data/{file}"), options).map_err(|e| e.to_string())?;
+                zip.write_all(&data).map_err(|e| e.to_string())?;
+            }
+        }
+        let db = state.paths.db_file();
+        if db.is_file() {
+            let data = std::fs::read(&db).map_err(|e| e.to_string())?;
+            zip.start_file("data/companion.db", options).map_err(|e| e.to_string())?;
+            zip.write_all(&data).map_err(|e| e.to_string())?;
+        }
+        let mut config = state.config();
+        config.llm.api_key.clear();
+        let text = serde_yaml::to_string(&config).map_err(|e| e.to_string())?;
+        zip.start_file("config.yaml", options).map_err(|e| e.to_string())?;
+        zip.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+
+        add_zip_dir(&mut zip, &state.paths.persona, "persona")?;
+        let index = state.paths.data.join("stickers").join("index.json");
+        if index.is_file() {
+            let data = std::fs::read(&index).map_err(|e| e.to_string())?;
+            zip.start_file("data/stickers/index.json", options).map_err(|e| e.to_string())?;
+            zip.write_all(&data).map_err(|e| e.to_string())?;
+        }
+        zip.finish().map_err(|e| e.to_string())?.into_inner()
+    };
+    let filename = format!(
+        "companion-backup-{}.zip",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    Ok(json!({
+        "ok": true,
+        "filename": filename,
+        "size": bytes.len(),
+        "data": BASE64.encode(bytes),
+    }))
 }
 
 #[tauri::command]
@@ -1608,6 +1841,241 @@ pub fn api_request(
         let _ = std::fs::rename(src, dst);
         let _ = name;
         return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
+
+
+    if path == "/api/history/search" {
+        let params = query_params(&url);
+        let query = params.get("query").cloned().unwrap_or_default();
+        let limit = params.get("limit").and_then(|v| v.parse::<i64>().ok()).unwrap_or(50).clamp(1, 200);
+        let before = params.get("before_id").and_then(|v| v.parse::<i64>().ok());
+        let kind;
+        let id;
+        if let Some(group) = params.get("group_id") {
+            kind = "Group";
+            id = group.clone();
+        } else {
+            kind = "Private";
+            id = params.get("peer_id").cloned().unwrap_or_default();
+        }
+        let rows = state.db.with(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, direction, author_id, author_name, parts, text, reply_to,
+                        sent_at, client_id, status
+                 FROM messages
+                 WHERE conversation_kind = ?1 AND conversation_id = ?2
+                   AND text LIKE ?3 AND (?4 IS NULL OR id < ?4)
+                 ORDER BY id DESC LIMIT ?5",
+            )?;
+            let pattern = format!("%{query}%");
+            let items = stmt
+                .query_map(rusqlite::params![kind, id, pattern, before, limit + 1], |row| {
+                    let parts_text: String = row.get(4)?;
+                    Ok(Message {
+                        id: row.get(0)?,
+                        conversation: Conversation { kind: kind.to_string(), id: id.clone() },
+                        direction: row.get(1)?,
+                        author: Author {
+                            id: row.get(2)?,
+                            name: row.get(3)?,
+                            role: String::new(),
+                        },
+                        parts: serde_json::from_str(&parts_text).unwrap_or_else(|_| json!([])),
+                        text: row.get(5)?,
+                        reply_to: row.get(6)?,
+                        reply_preview: None,
+                        sent_at: row.get(7)?,
+                        client_id: row.get(8)?,
+                        status: row.get(9)?,
+                        system: false,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(items)
+        }).unwrap_or_default();
+        let has_more = rows.len() as i64 > limit;
+        let mut rows = rows;
+        if has_more {
+            rows.truncate(limit as usize);
+        }
+        let next = rows.last().map(|m| m.id);
+        return ApiOut { status: 200, body: json!({
+            "ok": true, "messages": rows, "has_more": has_more,
+            "next_before_id": next,
+        })};
+    }
+
+    if path == "/api/character-traits" {
+        let params = query_params(&url);
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str)
+            .or_else(|| params.get("peer_id").map(String::as_str))
+            .unwrap_or("");
+        let key = format!("traits.{peer}");
+        let mut traits = state.db.with(|conn| {
+            conn.query_row("SELECT value FROM kv WHERE key = ?1", rusqlite::params![key], |row| {
+                row.get::<_, String>(0)
+            })
+        }).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok())
+          .unwrap_or_else(|| json!({
+              "enthusiasm": 50, "affection": 60, "initiative_scale": 1.0,
+              "quiet_until": 0, "low_pressure": false,
+          }));
+        if method == "POST" {
+            if let Some(obj) = payload.as_object() {
+                for (k, v) in obj {
+                    if k != "peer_id" {
+                        traits[k] = v.clone();
+                    }
+                }
+            }
+            let now = chrono::Utc::now().timestamp();
+            let _ = state.db.with(|conn| {
+                conn.execute(
+                    "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                    rusqlite::params![format!("traits.{peer}"), serde_json::to_string(&traits).unwrap_or_default(), now],
+                )?;
+                Ok(())
+            });
+        }
+        traits["ok"] = json!(true);
+        traits["voice"] = json!({ "enabled": false });
+        return ApiOut { status: 200, body: traits };
+    }
+
+    if path == "/api/bond" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let mut allow_multiple = state.db.with(|conn| {
+            conn.query_row("SELECT value FROM kv WHERE key = 'bond.allow_multiple'", [], |row| {
+                row.get::<_, String>(0)
+            })
+        }).ok().as_deref() == Some("1");
+        if method == "POST" {
+            match payload.get("action").and_then(Value::as_str).unwrap_or("") {
+                "set_multiple" => {
+                    allow_multiple = payload.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+                    let now = chrono::Utc::now().timestamp();
+                    let _ = state.db.with(|conn| {
+                        conn.execute(
+                            "INSERT INTO kv (key, value, updated_at) VALUES ('bond.allow_multiple', ?1, ?2)
+                             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                            rusqlite::params![if allow_multiple { "1" } else { "0" }, now],
+                        )?;
+                        Ok(())
+                    });
+                }
+                "bind" | "unbind" => {
+                    if let Some(cid) = payload.get("character_id").and_then(Value::as_str) {
+                        let key = format!("bond.{cid}");
+                        let now = chrono::Utc::now().timestamp();
+                        let mut value: Value = state.db.with(|conn| {
+                            conn.query_row("SELECT value FROM kv WHERE key = ?1", rusqlite::params![key], |row| {
+                                row.get::<_, String>(0)
+                            })
+                        }).ok().and_then(|text| serde_json::from_str(&text).ok())
+                          .unwrap_or_else(|| json!({ "affection": 0, "since": 0, "bound": false }));
+                        value["bound"] = json!(payload.get("action").and_then(Value::as_str) == Some("bind"));
+                        if value["bound"] == json!(true) {
+                            value["since"] = json!(now);
+                        }
+                        let _ = state.db.with(|conn| {
+                            conn.execute(
+                                "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?3)
+                                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                                rusqlite::params![format!("bond.{cid}"), serde_json::to_string(&value).unwrap_or_default(), now],
+                            )?;
+                            Ok(())
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut partners = Vec::new();
+        for (id, name) in characters(&state).into_iter().filter_map(|c| {
+            Some((c.get("id")?.as_str()?.to_string(), c.get("name")?.as_str()?.to_string()))
+        }) {
+            let key = format!("bond.{id}");
+            let value: Option<Value> = state.db.with(|conn| {
+                conn.query_row("SELECT value FROM kv WHERE key = ?1", rusqlite::params![key], |row| {
+                    row.get::<_, String>(0)
+                })
+            }).ok().and_then(|text| serde_json::from_str(&text).ok());
+            let Some(value) = value else { continue };
+            let bound = value.get("bound").and_then(Value::as_bool).unwrap_or(false);
+            let affection = value.get("affection").and_then(Value::as_i64).unwrap_or(0);
+            if !bound && affection <= 0 {
+                continue;
+            }
+            let since = value.get("since").and_then(Value::as_i64).unwrap_or(0);
+            let days = if bound && since > 0 {
+                ((chrono::Utc::now().timestamp() - since) / 86400).max(1)
+            } else {
+                0
+            };
+            partners.push(json!({
+                "character_id": id,
+                "name": name,
+                "affection": affection,
+                "bound": bound,
+                "days": days,
+            }));
+        }
+        let active = partners.iter().any(|p| p.get("bound") == Some(&json!(true)));
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "bond": { "active": active, "allow_multiple": allow_multiple, "partners": partners },
+            "candidates": [],
+        })};
+    }
+
+    if path == "/api/diagnostics" {
+        let key_set = !state.config().llm.api_key.trim().is_empty();
+        let (archives, _) = crate::media::cache_stats(&state.paths);
+        let count: i64 = state.db.with(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+        }).unwrap_or(0);
+        let memories: i64 = state.db.with(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM memories WHERE status = 'active'", [], |row| row.get(0))
+        }).unwrap_or(0);
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "setup": { "required": false },
+            "checks": [
+                { "id": "db", "label": "本地数据库", "status": "ok",
+                  "summary": format!("{count} 条消息 · {memories} 条有效记忆"),
+                  "details": [state.paths.db_file().display().to_string()] },
+                { "id": "llm", "label": "模型配置", "status": if key_set { "ok" } else { "warning" },
+                  "summary": if key_set { "API Key 已配置" } else { "尚未配置 API Key" },
+                  "details": [format!("{} · {}", state.config().llm.base_url, state.config().llm.model)] },
+                { "id": "media", "label": "媒体缓存", "status": if archives > 0 { "ok" } else { "warning" },
+                  "summary": format!("{archives} 个资源包已解压"),
+                  "details": [] },
+            ],
+        })};
+    }
+
+    if path == "/api/diagnostics/test" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let target = payload.get("target").and_then(Value::as_str).unwrap_or("");
+        if target != "llm" {
+            return ApiOut { status: 200, body: json!({ "ok": false, "error": "该目标已停用" }) };
+        }
+        let cfg = state.config();
+        let configured = !cfg.llm.api_key.trim().is_empty();
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "success": configured,
+            "message": if configured {
+                "模型配置已就绪；聊天回复会实际请求该接口。"
+            } else {
+                "尚未配置 API Key。"
+            },
+        })};
     }
 
     if path == "/api/settings" {

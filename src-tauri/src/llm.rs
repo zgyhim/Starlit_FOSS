@@ -294,5 +294,26 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, user_tex
         emit_status(&app, &conv, message_id, "replied", "");
         let reply_text = chunks.join("");
         let _ = crate::memory::extract(&state, &name, &user_text, &reply_text).await;
+        let followup_conv = conv.clone();
+        drop(state);
+        crate::pipeline::schedule_followup(app, followup_conv, chrono::Utc::now().timestamp());
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_reply;
+
+    #[test]
+    fn short_reply_stays_single() {
+        assert_eq!(split_reply("你好呀", 28, 5), vec!["你好呀"]);
+    }
+
+    #[test]
+    fn long_reply_is_bounded() {
+        let text = "今天天气很好，我们一起去吃拉面吧。".repeat(8);
+        let chunks = split_reply(&text, 28, 5);
+        assert!(chunks.len() <= 5);
+        assert!(chunks.iter().all(|c| !c.is_empty()));
+    }
 }
