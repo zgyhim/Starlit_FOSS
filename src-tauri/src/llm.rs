@@ -291,6 +291,7 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, user_tex
                 let _ = app.emit("message:new", json!({ "message": message }));
             }
         }
+        crate::sticker::maybe_send(&app, &state, &conv, &name);
         emit_status(&app, &conv, message_id, "replied", "");
         let reply_text = chunks.join("");
         let _ = crate::memory::extract(&state, &name, &user_text, &reply_text).await;

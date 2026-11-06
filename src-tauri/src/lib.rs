@@ -12,6 +12,7 @@ mod logging;
 mod media;
 mod paths;
 mod state;
+mod sticker;
 
 use tauri::Manager;
 
