@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
+#[derive(Clone)]
 pub struct Paths {
     pub root: PathBuf,
     pub data: PathBuf,

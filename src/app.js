@@ -12607,6 +12607,13 @@
     loadLoginIdentity();
     if (location.protocol !== 'file:') loadServiceSettings();
     if (window.StarlitUpdater) window.StarlitUpdater.init(apiRequest);
+    if (window.__TAURI__?.event) {
+      window.__TAURI__.event.listen('media:ready', () => {
+        if (!state.ready) return;
+        loadStickerSets();
+        loadStickers(true);
+      });
+    }
     connect();
   }
 

@@ -22,3 +22,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# 生成的媒体资源包（由 scripts/build-media.sh 重建）
+resources/media/*.zst

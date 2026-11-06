@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "archives": [
+    {
+      "name": "sticker-thumbs.tar.zst",
+      "target": "data",
+      "scope": "startup",
+      "sha256": "87aeedd5466be148228e2b518fc558e24dcc20ecf65019cae6769ba500b46b58",
+      "bytes": 2364635,
+      "content": "sticker_thumbs"
+    },
+    {
+      "name": "avatars.tar.zst",
+      "target": "data",
+      "scope": "startup",
+      "sha256": "8e0a0ce38dbc08fe6de1351d9b178c0582be6d970697b541de9ebaac999fd1ce",
+      "bytes": 859089,
+      "content": "avatars,character_avatars"
+    },
+    {
+      "name": "groups.tar.zst",
+      "target": "data",
+      "scope": "startup",
+      "sha256": "7bfeaf035613d5fb703eecf22e96815c71cab017ae73ae950bfce758d236c8d5",
+      "bytes": 3048,
+      "content": "groups"
+    },
+    {
+      "name": "stickers-mygo.tar.zst",
+      "target": "data/stickers",
+      "scope": "background",
+      "sha256": "3761948f70145af30fd9ed4cf2b113d2e57eb4de9185f228a363d22e56824154",
+      "bytes": 136177756,
+      "content": "mygo"
+    },
+    {
+      "name": "stickers-blue-archive.tar.zst",
+      "target": "data/stickers",
+      "scope": "background",
+      "sha256": "3f76b27ad90fee66fe813227004936e0b0baba22e71313fc9a3f42140e265831",
+      "bytes": 227513514,
+      "content": "blue archive"
+    },
+    {
+      "name": "stickers-kaguya.tar.zst",
+      "target": "data/stickers",
+      "scope": "background",
+      "sha256": "1789de85dcd806a59f2126376c31db0f34899935101fb33452315b91eff32eec",
+      "bytes": 419121925,
+      "content": "超时空辉夜姬表情包"
+    },
+    {
+      "name": "stickers-stolen.tar.zst",
+      "target": "data/stickers",
+      "scope": "background",
+      "sha256": "abdba4b3ff5399e7bd3fed5aef7bae9f546a71f6dad392b89824cf5c98a3d951",
+      "bytes": 11486295,
+      "content": "stolen"
+    }
+  ]
+}
