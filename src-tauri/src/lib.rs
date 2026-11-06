@@ -4,6 +4,7 @@ mod config;
 mod db;
 mod ipc;
 mod llm;
+mod group;
 mod lock;
 mod memory;
 mod logging;

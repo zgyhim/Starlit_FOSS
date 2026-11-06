@@ -220,6 +220,10 @@ fn emit_status(app: &AppHandle, conv: &Conversation, message_id: i64, status: &s
 }
 
 pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, user_text: String) {
+    if conv.kind == "Group" {
+        crate::group::spawn_group_reply(app, conv, message_id, user_text);
+        return;
+    }
     tauri::async_runtime::spawn(async move {
         let Some(state) = app.try_state::<AppState>() else {
             return;
