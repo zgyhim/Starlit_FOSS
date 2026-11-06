@@ -1116,6 +1116,7 @@ fn mask_key(key: &str) -> String {
 
 fn settings_body(cfg: &crate::config::Config) -> Value {
     json!({
+        "ok": true,
         "llm": {
             "base_url": cfg.llm.base_url,
             "model": cfg.llm.model,
@@ -2406,7 +2407,7 @@ pub fn api_request(
             return ApiOut {
                 status: 200,
                 body: match update_settings(&state, body) {
-                    Ok(body) => body,
+                    Ok(body) => ok(body),
                     Err(error) => json!({ "ok": false, "error": error }),
                 },
             };
