@@ -550,6 +550,59 @@ pub fn ping() -> bool {
     true
 }
 
+fn kv_get(state: &AppState, key: &str) -> Option<String> {
+    state
+        .db
+        .with(|conn| {
+            conn.query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get::<_, String>(0),
+            )
+        })
+        .ok()
+}
+
+fn kv_set(state: &AppState, key: &str, value: &str) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp();
+    state.db.with(|conn| {
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            rusqlite::params![key, value, now],
+        )?;
+        Ok(())
+    })
+}
+
+pub fn auto_clear_enabled(state: &AppState) -> bool {
+    kv_get(state, "media.auto_clear_on_exit").as_deref() == Some("1")
+}
+
+#[tauri::command]
+pub fn media_cache_info(state: State<'_, AppState>) -> Value {
+    let (archives, bytes) = crate::media::cache_stats(&state.paths);
+    json!({
+        "autoClear": auto_clear_enabled(&state),
+        "pending": state.pending_media_clear.load(std::sync::atomic::Ordering::Relaxed),
+        "archives": archives,
+        "bytes": bytes,
+    })
+}
+
+#[tauri::command]
+pub fn set_media_auto_clear(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    kv_set(&state, "media.auto_clear_on_exit", if enabled { "1" } else { "0" })
+}
+
+#[tauri::command]
+pub fn clear_media_cache(state: State<'_, AppState>) -> Value {
+    state
+        .pending_media_clear
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    json!({ "scheduled": true })
+}
+
 #[derive(Serialize)]
 pub struct ApiOut {
     pub status: u16,

@@ -10,7 +10,7 @@ mod state;
 use tauri::Manager;
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .register_uri_scheme_protocol("starlit", |ctx, request| {
             use tauri::Manager;
 
@@ -107,7 +107,23 @@ pub fn run() {
             api::retry_reply,
             api::ping,
             api::api_request,
+            api::media_cache_info,
+            api::set_media_auto_clear,
+            api::clear_media_cache,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            use std::sync::atomic::Ordering;
+            use tauri::Manager;
+            if let Some(state) = app_handle.try_state::<state::AppState>() {
+                let pending = state.pending_media_clear.load(Ordering::Relaxed);
+                if pending || api::auto_clear_enabled(&state) {
+                    let _ = media::clear_cache(&state.paths);
+                }
+            }
+        }
+    });
 }
