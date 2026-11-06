@@ -54,6 +54,37 @@ impl Paths {
         }
     }
 
+    /// 启动时应用上次请求的备份恢复（重启后生效）。
+    pub fn apply_pending_restore(&self) {
+        let marker = self.root.join(".restore_pending");
+        let Ok(text) = fs::read_to_string(&marker) else {
+            return;
+        };
+        let staging = PathBuf::from(text.trim());
+        if !staging.is_dir() {
+            let _ = fs::remove_file(&marker);
+            return;
+        }
+        let db_source = staging.join("data").join("companion.db");
+        if db_source.is_file() {
+            let _ = fs::remove_file(self.root.join("data").join("companion.db-wal"));
+            let _ = fs::remove_file(self.root.join("data").join("companion.db-shm"));
+            let _ = fs::copy(&db_source, self.db_file());
+        }
+        for name in ["characters.json", "groups.json", "character_traits.json", "presence.json"] {
+            let from = staging.join("data").join(name);
+            if from.is_file() {
+                let _ = fs::copy(from, self.data.join(name));
+            }
+        }
+        let persona = staging.join("persona");
+        if persona.is_dir() {
+            let _ = copy_dir(&persona, &self.persona);
+        }
+        let _ = fs::remove_file(&marker);
+        let _ = fs::remove_dir_all(&staging);
+    }
+
     pub fn ensure(&self) -> Result<(), String> {
         for dir in [
             &self.data,

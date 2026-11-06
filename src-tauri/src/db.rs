@@ -25,6 +25,40 @@ impl Db {
     fn migrate(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute_batch(SCHEMA).map_err(|e| format!("建表失败: {e}"))?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS shared_diaries_v2 (
+               peer_id TEXT NOT NULL DEFAULT '',
+               day TEXT NOT NULL,
+               title TEXT NOT NULL,
+               content TEXT NOT NULL,
+               source_turn_ids TEXT NOT NULL DEFAULT '[]',
+               message_count INTEGER NOT NULL DEFAULT 0,
+               generated_at REAL NOT NULL,
+               PRIMARY KEY(peer_id, day)
+             );",
+        )
+        .map_err(|e| e.to_string())?;
+        for table in ["shared_agreements", "shared_anniversaries"] {
+            let has_peer = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .and_then(|mut stmt| {
+                    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+                    let mut found = false;
+                    for row in rows {
+                        if row? == "peer_id" {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Ok(found)
+                })
+                .unwrap_or(false);
+            if !has_peer {
+                let _ = conn.execute_batch(&format!(
+                    "ALTER TABLE {table} ADD COLUMN peer_id TEXT NOT NULL DEFAULT ''"
+                ));
+            }
+        }
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|e| e.to_string())?;
