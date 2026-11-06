@@ -5,28 +5,13 @@ llm:
   timeout: 90
   temperature: 0.9
 qq:
-  self_id: '3894347764'
-  owner_id: '3188639146'
-  channel: onebot-server
+  self_id: ''
+  owner_id: ''
   server:
-    listen: 0.0.0.0
-    port: 18765
-    token: ''
-    allow_lan_without_token: false
-    base_url: http://127.0.0.1:18765
-    heartbeat_sec: 25
     owner_nickname: 老师
     bot_nickname: 星野
   group_mode: 'off'
   group_allowlist: []
-  ws:
-    host: 0.0.0.0
-    port: 6701
-    path: /onebot/v11/ws
-    access_token: ''
-  http:
-    base_url: http://127.0.0.1:3000
-    access_token: ''
 behavior:
   outbound_delay_ms:
   - 5000
