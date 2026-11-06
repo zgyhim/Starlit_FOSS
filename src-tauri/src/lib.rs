@@ -149,6 +149,10 @@ pub fn run() {
             api::set_media_auto_clear,
             api::clear_media_cache,
             api::media_status,
+            api::list_memories,
+            api::create_memory,
+            api::update_memory,
+            api::delete_memory,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

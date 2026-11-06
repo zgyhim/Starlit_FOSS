@@ -25,6 +25,19 @@
       invoke("recall_message", { conversation, messageId }),
     markRead: (conversation, readTs) => invoke("mark_read", { conversation, readTs }),
     retryReply: (conversation, clientId) => invoke("retry_reply", { conversation, clientId }),
+    listMemories: (query, offset, limit) =>
+      invoke("list_memories", { query, offset, limit }),
+    createMemory: ({ text, category, pinned }) =>
+      invoke("create_memory", { text, category, pinned }),
+    updateMemory: ({ id, text, category, pinned, corrected }) =>
+      invoke("update_memory", {
+        id: String(id),
+        text: text ?? null,
+        category: category ?? null,
+        pinned: pinned ?? null,
+        corrected: corrected ?? false,
+      }),
+    deleteMemory: (id) => invoke("delete_memory", { id: String(id) }),
     ping: () => invoke("ping"),
     mediaStatus: () => invoke("media_status"),
     mediaCacheInfo: () => invoke("media_cache_info"),
