@@ -85,6 +85,8 @@ pub struct BehaviorConfig {
     pub merge_max_wait_sec: f64,
     pub merge_max_msgs: usize,
     pub sticker_only_reply_prob: f64,
+    /// 回复速度：instant / fast / normal / slow
+    pub reply_speed: String,
 }
 
 impl Default for BehaviorConfig {
@@ -103,6 +105,7 @@ impl Default for BehaviorConfig {
             merge_max_wait_sec: 30.0,
             merge_max_msgs: 10,
             sticker_only_reply_prob: 0.35,
+            reply_speed: "normal".into(),
         }
     }
 }

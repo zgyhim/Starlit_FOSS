@@ -151,7 +151,16 @@ pub(crate) fn split_reply(text: &str, threshold: usize, max_chunks: usize) -> Ve
     chunks
 }
 
-pub(crate) fn delay_ms(range: [u64; 2]) -> u64 {
+pub(crate) fn speed_factor(cfg: &crate::config::Config) -> f64 {
+    match cfg.behavior.reply_speed.as_str() {
+        "instant" => 0.0,
+        "fast" | "quick" => 0.4,
+        "slow" | "relaxed" => 1.8,
+        _ => 1.0,
+    }
+}
+
+fn delay_ms(range: [u64; 2]) -> u64 {
     let low = range[0].min(range[1]);
     let high = range[1].max(range[0]);
     rand::rng().random_range(low..=high)
@@ -282,10 +291,13 @@ pub fn spawn_reply(app: AppHandle, conv: Conversation, message_id: i64, user_tex
             return;
         }
 
-        tokio::time::sleep(Duration::from_millis(delay_ms(cfg.behavior.outbound_delay_ms))).await;
+        let factor = speed_factor(&cfg);
+        let outbound = (delay_ms(cfg.behavior.outbound_delay_ms) as f64 * factor) as u64;
+        tokio::time::sleep(Duration::from_millis(outbound)).await;
         for (index, chunk) in chunks.iter().enumerate() {
             if index > 0 {
-                tokio::time::sleep(Duration::from_millis(delay_ms(cfg.behavior.chunk_delay_ms))).await;
+                let chunk_delay = (delay_ms(cfg.behavior.chunk_delay_ms) as f64 * factor) as u64;
+                tokio::time::sleep(Duration::from_millis(chunk_delay)).await;
             }
             if let Some(message) = insert_reply(&state, &conv, &name, chunk) {
                 let _ = app.emit("message:new", json!({ "message": message }));

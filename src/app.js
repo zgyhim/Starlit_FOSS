@@ -183,6 +183,7 @@
     settingsDensity: $('#settingsDensity'),
     settingsFontSize: $('#settingsFontSize'),
     settingsSendKey: $('#settingsSendKey'),
+    settingsReplySpeed: $('#settingsReplySpeed'),
     settingsChatStyle: $('#settingsChatStyle'),
     settingsNotifications: $('#settingsNotifications'),
     settingsNotificationState: $('#settingsNotificationState'),
@@ -1083,6 +1084,24 @@
       try { localStorage.setItem(LS_APPEARANCE, JSON.stringify(appearancePrefs)); }
       catch (e) { toast('聊天显示偏好暂时无法保存'); }
     }
+  }
+
+  if (els.settingsReplySpeed) {
+    els.settingsReplySpeed.addEventListener('change', async () => {
+      const speed = els.settingsReplySpeed.value;
+      try {
+        const res = await apiRequest('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ behavior: { reply_speed: speed } }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+        toast(speed === 'instant' ? '已切换为瞬间回复' : '回复速度已更新');
+      } catch (e) {
+        toast('保存失败：' + (e?.message || e));
+      }
+    });
   }
 
   for (const [key, id] of [['density', 'settingsDensity'], ['fontSize', 'settingsFontSize'], ['sendKey', 'settingsSendKey']]) {
@@ -9886,6 +9905,9 @@
       setSettingsNotice('');
       applyLlmSettings(data.llm || {});
       applyTtsSettings(data.tts || {});
+      if (els.settingsReplySpeed && data.behavior) {
+        els.settingsReplySpeed.value = data.behavior.reply_speed || 'normal';
+      }
       applySetup(data.setup);
       if (data.setup?.required && els.settingsMask.classList.contains('hidden')) {
         revealSettings();
