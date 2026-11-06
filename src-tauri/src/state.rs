@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Mutex, RwLock};
 
@@ -17,6 +18,7 @@ pub struct AppState {
     pub media_done: AtomicUsize,
     pub media_total: AtomicUsize,
     pub media_error: Mutex<String>,
+    pub character_drafts: Mutex<HashMap<String, serde_json::Value>>,
     pub _instance_lock: crate::lock::InstanceLock,
 }
 
@@ -37,6 +39,7 @@ impl AppState {
             media_done: AtomicUsize::new(0),
             media_total: AtomicUsize::new(0),
             media_error: Mutex::new(String::new()),
+            character_drafts: Mutex::new(HashMap::new()),
             _instance_lock: instance_lock,
         }
     }

@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
@@ -637,6 +637,202 @@ fn ok(mut body: Value) -> Value {
     body
 }
 
+
+fn characters_file(state: &AppState) -> PathBuf {
+    state.paths.data.join("characters.json")
+}
+
+fn read_characters(state: &AppState) -> Value {
+    std::fs::read_to_string(characters_file(state))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| json!({ "characters": [] }))
+}
+
+fn write_characters(state: &AppState, value: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    std::fs::write(characters_file(state), text).map_err(|e| e.to_string())
+}
+
+fn find_character(state: &AppState, id: &str) -> Option<(String, String)> {
+    read_characters(state)
+        .get("characters")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("id").and_then(Value::as_str) == Some(id) {
+                    Some((
+                        item.get("name").and_then(Value::as_str).unwrap_or("角色").to_string(),
+                        item.get("slug").and_then(Value::as_str).unwrap_or(id).to_string(),
+                    ))
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn persona_dir(state: &AppState, slug: &str) -> PathBuf {
+    state.paths.persona.join("characters").join(slug)
+}
+
+fn revision_of(text: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(text.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn read_persona(state: &AppState, slug: &str) -> String {
+    std::fs::read_to_string(persona_dir(state, slug).join("persona.md")).unwrap_or_default()
+}
+
+fn persona_versions(state: &AppState, slug: &str) -> Vec<Value> {
+    let dir = state.paths.persona.join(".versions").join(slug);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut items: Vec<Value> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                return None;
+            }
+            let text = std::fs::read_to_string(&path).ok()?;
+            let name = path.file_name()?.to_str()?.to_string();
+            let created = entry.metadata().ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            Some(json!({
+                "id": name,
+                "reason": "修改前",
+                "created_at": chrono::DateTime::from_timestamp(created as i64, 0)
+                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "preview": text.chars().take(100).collect::<String>(),
+                "length": text.chars().count(),
+            }))
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        b.get("created_at").and_then(Value::as_str)
+            .cmp(&a.get("created_at").and_then(Value::as_str))
+    });
+    items
+}
+
+fn backup_persona(state: &AppState, slug: &str, text: &str) {
+    let dir = state.paths.persona.join(".versions").join(slug);
+    let _ = std::fs::create_dir_all(&dir);
+    let stamp = chrono::Utc::now().timestamp();
+    let name = format!("{stamp}-{}.md", &revision_of(text)[..8]);
+    let _ = std::fs::write(dir.join(name), text);
+}
+
+fn save_data_url(state: &AppState, relative: &str, data: &str) -> Result<String, String> {
+    let (_, encoded) = data.split_once(',').ok_or("图片数据无效")?;
+    let bytes = BASE64.decode(encoded).map_err(|e| format!("图片解码失败: {e}"))?;
+    let path = state.paths.data.join(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(format!("starlit://local/{relative}"))
+}
+
+fn draft_from_card(body: &Value) -> Value {
+    let card = body.get("card").cloned().unwrap_or_else(|| json!({}));
+    let data = card.get("data").cloned().unwrap_or_else(|| card.clone());
+    let pick = |key: &str| data.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    let name = {
+        let value = pick("name");
+        if value.is_empty() { pick("nickname") } else { value }
+    };
+    let mut persona = pick("persona_md");
+    if persona.is_empty() {
+        let mut sections = Vec::new();
+        for key in ["description", "personality", "scenario"] {
+            let value = pick(key);
+            if !value.is_empty() {
+                sections.push(value);
+            }
+        }
+        persona = sections.join("\n\n");
+    }
+    let summary = {
+        let value = pick("summary");
+        if value.is_empty() { pick("description") } else { value }
+    };
+    let aliases = data.get("aliases").cloned().unwrap_or_else(|| json!([]));
+    let interests = data.get("interests").cloned().unwrap_or_else(|| json!([]));
+    json!({
+        "id": format!("draft-{}", chrono::Utc::now().timestamp_millis()),
+        "revision": 1,
+        "name": if name.is_empty() { "新角色".to_string() } else { name },
+        "series": pick("series"),
+        "aliases": aliases,
+        "summary": summary,
+        "persona_md": persona,
+        "interests": interests,
+        "avatar": body.get("avatar").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn commit_draft(state: &AppState, body: &Value) -> Result<Value, String> {
+    let draft_id = body.get("draft_id").and_then(Value::as_str).unwrap_or("");
+    let draft = state
+        .character_drafts
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(draft_id)
+        .cloned()
+        .ok_or("草稿不存在或已过期")?;
+    let name = draft.get("name").and_then(Value::as_str).unwrap_or("新角色").to_string();
+    let mut characters = read_characters(state);
+    let list = characters
+        .get_mut("characters")
+        .and_then(Value::as_array_mut)
+        .ok_or("角色数据格式错误")?;
+    let next_id = list
+        .iter()
+        .filter_map(|item| item.get("id").and_then(Value::as_str)?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(3901000100)
+        + 1;
+    let id = next_id.to_string();
+    list.push(json!({
+        "id": id,
+        "name": name,
+        "slug": name,
+        "series": draft.get("series").and_then(Value::as_str).unwrap_or(""),
+        "source": "character-card",
+    }));
+    write_characters(state, &characters)?;
+
+    let dir = persona_dir(state, &name);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let persona = draft.get("persona_md").and_then(Value::as_str).unwrap_or("");
+    std::fs::write(dir.join("persona.md"), persona).map_err(|e| e.to_string())?;
+    let interests = draft
+        .get("interests")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"))
+        .unwrap_or_default();
+    std::fs::write(dir.join("interests.md"), interests).map_err(|e| e.to_string())?;
+
+    if let Some(avatar) = draft.get("avatar").and_then(Value::as_str) {
+        let _ = save_data_url(state, &format!("avatars/{id}.png"), avatar);
+    }
+    let _ = state
+        .character_drafts
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(draft_id);
+    Ok(json!({ "ok": true, "character": { "id": id, "name": name,
+        "series": draft.get("series").and_then(Value::as_str).unwrap_or("") } }))
+}
+
 fn query_params(url: &str) -> HashMap<String, String> {
     let Some((_, query)) = url.split_once('?') else {
         return HashMap::new();
@@ -776,6 +972,206 @@ pub fn api_request(
     body: Option<String>,
 ) -> ApiOut {
     let path = url.split('?').next().unwrap_or("");
+
+    if path == "/api/profile" {
+        let mut cfg = state.config();
+        if method == "POST" {
+            let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+                .unwrap_or_else(|_| json!({}));
+            if let Some(nickname) = payload.get("nickname").and_then(Value::as_str) {
+                if !nickname.trim().is_empty() {
+                    cfg.qq.server.owner_nickname = nickname.trim().to_string();
+                    if let Err(error) = crate::paths::write_config(&state.paths.config_file(), &cfg) {
+                        return ApiOut { status: 500, body: json!({ "ok": false, "error": error }) };
+                    }
+                    if let Ok(mut guard) = state.config.write() {
+                        *guard = cfg.clone();
+                    }
+                }
+            }
+        }
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "profile": { "nickname": cfg.qq.server.owner_nickname },
+            "owner": { "nickname": cfg.qq.server.owner_nickname },
+        })};
+    }
+
+    if path == "/api/avatar" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let data = payload.get("data").and_then(Value::as_str).unwrap_or("");
+        let body = match safe_segment(peer) {
+            Some(peer) => match save_data_url(&state, &format!("avatars/{peer}.png"), data) {
+                Ok(url) => json!({ "ok": true, "url": url }),
+                Err(error) => json!({ "ok": false, "error": error }),
+            },
+            None => json!({ "ok": false, "error": "无效的头像标识" }),
+        };
+        return ApiOut { status: 200, body };
+    }
+
+    if path == "/api/avatar/delete" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        if let Some(peer) = safe_segment(peer) {
+            let target = state.paths.data.join("avatars").join(format!("{peer}.png"));
+            let _ = std::fs::remove_file(target);
+        }
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
+
+    if path == "/api/character-card" {
+        let params = query_params(&url);
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str)
+            .or_else(|| params.get("peer_id").map(String::as_str))
+            .unwrap_or("");
+        let Some((name, slug)) = find_character(&state, peer) else {
+            return ApiOut { status: 404, body: json!({ "ok": false, "error": "角色不存在" }) };
+        };
+        let current = read_persona(&state, &slug);
+        if method == "PUT" {
+            let Some(expected) = payload.get("revision").and_then(Value::as_str) else {
+                return ApiOut { status: 400, body: json!({ "ok": false, "error": "缺少 revision" }) };
+            };
+            if !current.is_empty() && expected != revision_of(&current) {
+                return ApiOut { status: 409, body: json!({ "ok": false, "error": "人设已被修改" }) };
+            }
+            let next = payload.get("persona_md").and_then(Value::as_str).unwrap_or("");
+            backup_persona(&state, &slug, &current);
+            let dir = persona_dir(&state, &slug);
+            let _ = std::fs::create_dir_all(&dir);
+            if let Err(error) = std::fs::write(dir.join("persona.md"), next) {
+                return ApiOut { status: 500, body: json!({ "ok": false, "error": error.to_string() }) };
+            }
+        }
+        let text = read_persona(&state, &slug);
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "card": {
+                "name": name,
+                "persona_md": text,
+                "revision": revision_of(&text),
+                "versions": persona_versions(&state, &slug),
+            }
+        })};
+    }
+
+    if path == "/api/character-card/restore" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let Some((name, slug)) = find_character(&state, peer) else {
+            return ApiOut { status: 404, body: json!({ "ok": false, "error": "角色不存在" }) };
+        };
+        let current = read_persona(&state, &slug);
+        if let Some(expected) = payload.get("revision").and_then(Value::as_str) {
+            if !current.is_empty() && expected != revision_of(&current) {
+                return ApiOut { status: 409, body: json!({ "ok": false, "error": "人设已被修改" }) };
+            }
+        }
+        let version = payload.get("version_id").and_then(Value::as_str).unwrap_or("");
+        let version = safe_segment(version).unwrap_or_default();
+        let source = state.paths.persona.join(".versions").join(&slug).join(&version);
+        let Ok(restored) = std::fs::read_to_string(&source) else {
+            return ApiOut { status: 404, body: json!({ "ok": false, "error": "版本不存在" }) };
+        };
+        backup_persona(&state, &slug, &current);
+        let dir = persona_dir(&state, &slug);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join("persona.md"), &restored);
+        return ApiOut { status: 200, body: json!({
+            "ok": true,
+            "card": {
+                "name": name,
+                "persona_md": restored,
+                "revision": revision_of(&restored),
+                "versions": persona_versions(&state, &slug),
+            }
+        })};
+    }
+
+    if path == "/api/character-drafts/import" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let draft = draft_from_card(&payload);
+        let id = draft.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        match state.character_drafts.lock() {
+            Ok(mut drafts) => { drafts.insert(id, draft.clone()); }
+            Err(error) => return ApiOut { status: 500, body: json!({ "ok": false, "error": error.to_string() }) },
+        }
+        return ApiOut { status: 200, body: json!({ "ok": true, "draft": draft }) };
+    }
+
+    if path == "/api/character-drafts" && method == "PATCH" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let id = payload.get("draft_id").and_then(Value::as_str).unwrap_or("").to_string();
+        let Ok(mut drafts) = state.character_drafts.lock() else {
+            return ApiOut { status: 500, body: json!({ "ok": false, "error": "草稿锁不可用" }) };
+        };
+        let Some(draft) = drafts.get_mut(&id) else {
+            return ApiOut { status: 404, body: json!({ "ok": false, "error": "草稿不存在" }) };
+        };
+        for key in ["name", "series", "summary", "persona_md", "avatar"] {
+            if let Some(value) = payload.get(key) {
+                draft[key] = value.clone();
+            }
+        }
+        for key in ["aliases", "interests"] {
+            if let Some(value) = payload.get(key) {
+                draft[key] = value.clone();
+            }
+        }
+        let revision = draft.get("revision").and_then(Value::as_i64).unwrap_or(1) + 1;
+        draft["revision"] = json!(revision);
+        let draft = draft.clone();
+        return ApiOut { status: 200, body: json!({ "ok": true, "draft": draft }) };
+    }
+
+    if path == "/api/character-drafts/commit" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let body = match commit_draft(&state, &payload) {
+            Ok(body) => body,
+            Err(error) => json!({ "ok": false, "error": error }),
+        };
+        return ApiOut { status: 200, body };
+    }
+
+    if path == "/api/character-drafts/chat" || path == "/api/character-drafts/generate" {
+        return ApiOut { status: 200, body: json!({
+            "ok": false,
+            "error": "试聊与 AI 生成暂未实现，请直接编辑人设后添加。",
+        })};
+    }
+
+    if path == "/api/characters/delete" && method == "POST" {
+        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
+            .unwrap_or_else(|_| json!({}));
+        let peer = payload.get("peer_id").and_then(Value::as_str).unwrap_or("");
+        let Some((name, slug)) = find_character(&state, peer) else {
+            return ApiOut { status: 404, body: json!({ "ok": false, "error": "角色不存在" }) };
+        };
+        let mut characters = read_characters(&state);
+        if let Some(list) = characters.get_mut("characters").and_then(Value::as_array_mut) {
+            list.retain(|item| item.get("id").and_then(Value::as_str) != Some(peer));
+        }
+        let _ = write_characters(&state, &characters);
+        let src = persona_dir(&state, &slug);
+        let dst = state.paths.backups.join(format!(
+            "deleted-{}-{slug}",
+            chrono::Utc::now().timestamp()
+        ));
+        let _ = std::fs::rename(src, dst);
+        let _ = name;
+        return ApiOut { status: 200, body: json!({ "ok": true }) };
+    }
+
     if path == "/api/settings" {
         if method == "POST" {
             return ApiOut {
