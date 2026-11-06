@@ -31,6 +31,54 @@ fn load_manifest(resources: &Path) -> Option<Manifest> {
     serde_json::from_str(&text).ok()
 }
 
+/// 读取逻辑归档：优先单文件；不存在时按 `<name>.000`、`.001` 分片顺序拼接。
+fn open_archive(paths: &Paths, name: &str) -> io::Result<Box<dyn Read>> {
+    let dir = paths.resources.join("media");
+    let direct = dir.join(name);
+    if direct.is_file() {
+        return Ok(Box::new(fs::File::open(direct)?));
+    }
+    let mut parts: Vec<PathBuf> = fs::read_dir(&dir)?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .map(|file| file.starts_with(&format!("{name}.")))
+                .unwrap_or(false)
+        })
+        .collect();
+    if parts.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "归档不存在"));
+    }
+    parts.sort();
+    let mut readers: Vec<fs::File> = Vec::new();
+    for part in parts {
+        readers.push(fs::File::open(part)?);
+    }
+    Ok(Box::new(ChainedReader { readers, index: 0 }))
+}
+
+struct ChainedReader {
+    readers: Vec<fs::File>,
+    index: usize,
+}
+
+impl Read for ChainedReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            if self.index >= self.readers.len() {
+                return Ok(0);
+            }
+            let read = self.readers[self.index].read(buf)?;
+            if read > 0 {
+                return Ok(read);
+            }
+            self.index += 1;
+        }
+    }
+}
+
 fn marker_path(paths: &Paths, sha: &str) -> PathBuf {
     paths.root.join(".cache").join("media").join(format!("{sha}.done"))
 }
@@ -49,8 +97,7 @@ fn write_file_record(paths: &Paths, entry: &ArchiveEntry) -> Result<(), String> 
     if record.is_file() {
         return Ok(());
     }
-    let archive = paths.resources.join("media").join(&entry.name);
-    let file = fs::File::open(&archive).map_err(|e| e.to_string())?;
+    let file = open_archive(paths, &entry.name).map_err(|e| e.to_string())?;
     let decoder = zstd::Decoder::new(io::BufReader::new(file)).map_err(|e| e.to_string())?;
     let mut tar = tar::Archive::new(decoder);
     let mut lines = String::new();
@@ -87,9 +134,8 @@ fn extract_one(
         on_bytes(entry.uncompressed);
         return Ok(());
     }
-    let archive = paths.resources.join("media").join(&entry.name);
-    let file = fs::File::open(&archive)
-        .map_err(|e| format!("打开资源包 {} 失败: {e}", archive.display()))?;
+    let file = open_archive(paths, &entry.name)
+        .map_err(|e| format!("打开资源包 {} 失败: {e}", entry.name))?;
     let decoder = zstd::Decoder::new(io::BufReader::new(file))
         .map_err(|e| format!("解压 {} 失败: {e}", entry.name))?;
     let mut tar = tar::Archive::new(decoder);
@@ -214,7 +260,7 @@ pub fn cache_stats(paths: &Paths) -> (usize, u64) {
 
 #[allow(dead_code)]
 pub fn read_entry(paths: &Paths, archive: &str, inner: &str) -> Option<Vec<u8>> {
-    let file = fs::File::open(paths.resources.join("media").join(archive)).ok()?;
+    let file = open_archive(paths, archive).ok()?;
     let decoder = zstd::Decoder::new(io::BufReader::new(file)).ok()?;
     let mut tar = tar::Archive::new(decoder);
     let entries = tar.entries().ok()?;
