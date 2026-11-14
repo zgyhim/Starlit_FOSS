@@ -105,6 +105,7 @@ pub fn run() {
 
             logging::init(&paths.log_file())?;
             logging::info("app", &format!("data root: {}", paths.root.display()));
+            logging::set_emitter(app.handle().clone());
             paths.seed()?;
             let config = paths.load_config()?;
             let db = db::Db::open(&paths.db_file())?;

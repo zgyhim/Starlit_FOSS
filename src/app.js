@@ -12523,6 +12523,32 @@
     } catch (e) { /* 老服务端没有这个接口 → 保留文字头像 */ }
   }
 
+  // ---------------------------------------------------------- 错误浮层
+  // 简单文本：黑底红字，无边框/圆角/阴影，每条 10 秒后消失。
+  function showErrorLog(payload) {
+    if (!payload || !payload.message) return;
+    let layer = document.getElementById('errorLogLayer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.id = 'errorLogLayer';
+      layer.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;' +
+        'pointer-events:none;';
+      document.body.appendChild(layer);
+    }
+    const line = document.createElement('div');
+    line.style.cssText = 'background:#000;color:#ff0000;' +
+      'font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;' +
+      'word-break:break-word;padding:2px 4px;';
+    const tag = payload.tag ? `[${payload.tag}] ` : '';
+    line.textContent = tag + String(payload.message);
+    layer.appendChild(line);
+    setTimeout(() => {
+      line.remove();
+      if (!layer.childElementCount) layer.remove();
+    }, 10000);
+  }
+  window.__starlitOnErrorLog = showErrorLog;
+
   // ---------------------------------------------------------- 启动缓存
   function setBootSplash(visible) {
     const splash = document.getElementById('bootSplash');

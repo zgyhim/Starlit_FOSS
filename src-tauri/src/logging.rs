@@ -36,6 +36,7 @@ impl Level {
 }
 
 static LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
+static EMITTER: OnceLock<tauri::AppHandle> = OnceLock::new();
 static MIN_LEVEL: AtomicU8 = AtomicU8::new(Level::Info as u8);
 static NEXT_TID: AtomicU64 = AtomicU64::new(1);
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
@@ -97,6 +98,11 @@ fn rotate_if_needed(path: &Path) {
     }
 }
 
+/// 把 ERROR 级别日志同时推给前端。
+pub fn set_emitter(app: tauri::AppHandle) {
+    let _ = EMITTER.set(app);
+}
+
 pub fn set_level(level: Level) {
     MIN_LEVEL.store(level as u8, Ordering::Relaxed);
 }
@@ -143,6 +149,20 @@ pub fn log(level: Level, tag: &str, message: &str) {
         );
     } else {
         eprintln!("{timestamp} {pid:>6} {tid:>5} {}/StarLit({tag}): {message}", level.letter());
+    }
+
+    if level == Level::Error {
+        if let Some(app) = EMITTER.get() {
+            use tauri::Emitter;
+            let _ = app.emit(
+                "log:error",
+                serde_json::json!({
+                    "tag": tag,
+                    "message": message,
+                    "ts": now.timestamp_millis(),
+                }),
+            );
+        }
     }
 
     let Some(path) = LOG_FILE.get() else {

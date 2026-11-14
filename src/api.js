@@ -75,15 +75,24 @@
   };
 
   window.addEventListener("error", (e) => {
-    invoke("log_message", { message: `[ui] ${e.message} @ ${e.filename}:${e.lineno}` });
+    const message = `${e.message} @ ${e.filename}:${e.lineno}`;
+    invoke("log_message", { message: `[ui] ${message}` });
+    window.__starlitOnErrorLog?.({ tag: "ui", message });
   });
   window.addEventListener("unhandledrejection", (e) => {
-    invoke("log_message", { message: `[ui] unhandled: ${String(e.reason)}` });
+    const message = `unhandled: ${String(e.reason)}`;
+    invoke("log_message", { message: `[ui] ${message}` });
+    window.__starlitOnErrorLog?.({ tag: "ui", message });
   });
 
   if (event) {
     for (const name of ["message:new", "message:recalled", "message:status", "read:state"]) {
       event.listen(name, (e) => emitToApp(e.payload));
     }
+    event.listen("log:error", (e) => {
+      if (typeof window.__starlitOnErrorLog === "function") {
+        window.__starlitOnErrorLog(e.payload);
+      }
+    });
   }
 })();
