@@ -76,19 +76,40 @@ pub fn init(log_file: &Path) -> Result<(), String> {
                 .location()
                 .map(|l| format!("{}:{}", l.file(), l.line()))
                 .unwrap_or_else(|| "unknown".into());
-            fatal("panic", &format!("{info} @ {location}"));
-            // 致命错误不推给前端；尝试用系统对话框告知用户。
+            let detail = if let Some(text) = info.payload().downcast_ref::<&str>() {
+                (*text).to_string()
+            } else if let Some(text) = info.payload().downcast_ref::<String>() {
+                text.clone()
+            } else {
+                "未知错误".to_string()
+            };
+            fatal("panic", &format!("{detail} @ {location}"));
+            // 致命错误不推给前端；尝试用系统对话框告知用户，并附上详情。
             if let Some(app) = EMITTER.get() {
                 use tauri_plugin_dialog::DialogExt;
+                let log_path = LOG_FILE
+                    .get()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "desktop.log".into());
+                let detail = if detail.chars().count() > 800 {
+                    format!("{}…", detail.chars().take(800).collect::<String>())
+                } else {
+                    detail
+                };
+                let message = format!(
+                    "应用程序遇到错误，无法继续运行。\n\n\
+                     错误：{detail}\n\
+                     位置：{location}\n\
+                     日志：{log_path}\n\n\
+                     请重新启动星伴；如果反复出现，请把日志一并反馈。"
+                );
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     app.dialog()
-                        .message(
-                            "应用程序遇到错误，无法继续运行。\n\n请重新启动星伴；如果反复出现，请查看数据目录下的 desktop.log。",
-                        )
-                        .title("星伴")
+                        .message(message)
+                        .title("星伴 · 致命错误")
                         .show(|_| {});
                 }));
-                std::thread::sleep(std::time::Duration::from_millis(300));
+                std::thread::sleep(std::time::Duration::from_millis(600));
             }
             default_hook(info);
         }));
