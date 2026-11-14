@@ -214,6 +214,7 @@
     settingsAddCharacter: $('#settingsAddCharacter'),
     settingsBackup: $('#settingsBackup'),
     settingsRestore: $('#settingsRestore'),
+    settingsDevtools: $('#settingsDevtools'),
     settingsRestoreInput: $('#settingsRestoreInput'),
     settingsCacheState: $('#settingsCacheState'),
     settingsClearCache: $('#settingsClearCache'),
@@ -12749,6 +12750,23 @@
     setBootSplash(false);
     connect();
   }
+
+  // 避免 WebView 默认右键菜单在页面上“穿帮”；自定义菜单会先 preventDefault。
+  document.addEventListener('contextmenu', (event) => {
+    if (!event.defaultPrevented) event.preventDefault();
+  });
+
+  if (els.settingsDevtools) {
+    els.settingsDevtools.addEventListener('click', async () => {
+      try { await api.toggleDevtools(); } catch (e) { toast('当前平台不支持开发者工具'); }
+    });
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'F12') {
+      event.preventDefault();
+      api.toggleDevtools().catch(() => {});
+    }
+  });
 
   function init() {
     const qTheme = new URLSearchParams(location.search).get('theme');

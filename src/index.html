@@ -1495,52 +1495,6 @@
         <div><strong>页外通知</strong><span id="settingsNotificationState">关闭；仅在你主动开启时请求通知权限</span></div>
         <span class="switch"><input type="checkbox" id="settingsNotifications" aria-label="开启页外通知"><i></i></span>
       </label>
-      <div class="setting-row">
-        <div><strong>聊天外观</strong><span>按角色设置背景、气泡、颜色和小装饰</span></div>
-        <button class="ghost" id="settingsChatStyle">去设置</button>
-      </div>
-      <div class="setting-row">
-        <div><strong>添加角色</strong><span>头像 + 名字，自动联网搜索并蒸馏人设</span></div>
-        <button class="ghost" id="settingsAddCharacter">添加</button>
-      </div>
-      <div class="setting-row">
-        <div><strong>数据备份</strong><span>包含聊天、回忆、人设和群数据，不含密钥；恢复前请先停止星伴</span></div>
-        <div class="setting-inline">
-          <button class="ghost" id="settingsRestore" type="button">恢复备份</button>
-          <button class="ghost" id="settingsBackup" type="button">下载备份</button>
-          <input type="file" id="settingsRestoreInput" accept=".zip,application/zip" hidden>
-        </div>
-      </div>
-      <section class="update-settings" id="settingsCacheSection" aria-label="本地缓存">
-        <div class="setting-row">
-          <div><strong>解压缓存</strong><span id="settingsCacheState">正在读取…</span></div>
-          <button class="ghost" id="settingsClearCache" type="button">清理（退出生效）</button>
-        </div>
-        <label class="setting-row" for="settingsAutoClearCache">
-          <div><strong>退出时自动删除解压缓存</strong><span>下次启动会重新解压资源包，首次打开会变慢</span></div>
-          <span class="switch"><input type="checkbox" id="settingsAutoClearCache" aria-label="退出时自动删除解压缓存"><i></i></span>
-        </label>
-      </section>
-      <section class="update-settings hidden" id="settingsUpdateRow" aria-label="软件更新">
-        <div class="setting-row">
-          <div><strong>软件更新</strong><span id="settingsUpdateState">仅检查公开版本信息，不会上传聊天或个人配置</span></div>
-          <button class="ghost" id="settingsUpdateCheck" type="button">检查更新</button>
-        </div>
-        <label class="setting-row" for="settingsUpdateAuto">
-          <div><strong>启动时自动检查</strong><span>每次启动都会检查；新版本由你确认后才会下载</span></div>
-          <span class="switch"><input type="checkbox" id="settingsUpdateAuto" aria-label="自动检查更新"><i></i></span>
-        </label>
-        <div class="setting-row">
-          <div><label for="settingsUpdateChannel"><strong>更新通道</strong></label><span>测试版优先体验，稳定版适合日常使用</span></div>
-          <select class="cs-input settings-choice" id="settingsUpdateChannel"><option value="test">测试版</option><option value="stable">稳定版</option></select>
-        </div>
-      </section>
-      <details class="settings-advanced" id="settingsAdvanced">
-        <summary>
-          <span><strong>高级与开发者配置</strong><small>模型、接口、诊断和连接</small></span>
-          <svg><use href="#i-back"/></svg>
-        </summary>
-        <div class="settings-advanced-body">
           <details class="deepseek-guide">
             <summary><strong>第一次使用？DeepSeek API 新手指引</strong></summary>
             <ol>
@@ -1587,6 +1541,52 @@
               <p class="cs-hint diagnostic-test-result" id="settingsLlmTestState" aria-live="polite">只有点击「实测模型」才会自动保存当前表单，并在保存成功后发送一条固定测试消息。</p>
             </div>
           </div>
+      <div class="setting-row">
+        <div><strong>聊天外观</strong><span>按角色设置背景、气泡、颜色和小装饰</span></div>
+        <button class="ghost" id="settingsChatStyle">去设置</button>
+      </div>
+      <div class="setting-row">
+        <div><strong>添加角色</strong><span>头像 + 名字，自动联网搜索并蒸馏人设</span></div>
+        <button class="ghost" id="settingsAddCharacter">添加</button>
+      </div>
+      <div class="setting-row">
+        <div><strong>数据备份</strong><span>包含聊天、回忆、人设和群数据，不含密钥；恢复前请先停止星伴</span></div>
+        <div class="setting-inline">
+          <button class="ghost" id="settingsRestore" type="button">恢复备份</button>
+          <button class="ghost" id="settingsBackup" type="button">下载备份</button>
+          <input type="file" id="settingsRestoreInput" accept=".zip,application/zip" hidden>
+        </div>
+      </div>
+      <section class="update-settings" id="settingsCacheSection" aria-label="本地缓存">
+        <div class="setting-row">
+          <div><strong>解压缓存</strong><span id="settingsCacheState">正在读取…</span></div>
+          <button class="ghost" id="settingsClearCache" type="button">清理（退出生效）</button>
+        </div>
+        <label class="setting-row" for="settingsAutoClearCache">
+          <div><strong>退出时自动删除解压缓存</strong><span>下次启动会重新解压资源包，首次打开会变慢</span></div>
+          <span class="switch"><input type="checkbox" id="settingsAutoClearCache" aria-label="退出时自动删除解压缓存"><i></i></span>
+        </label>
+      </section>
+      <section class="update-settings hidden" id="settingsUpdateRow" aria-label="软件更新">
+        <div class="setting-row">
+          <div><strong>软件更新</strong><span id="settingsUpdateState">仅检查公开版本信息，不会上传聊天或个人配置</span></div>
+          <button class="ghost" id="settingsUpdateCheck" type="button">检查更新</button>
+        </div>
+        <label class="setting-row" for="settingsUpdateAuto">
+          <div><strong>启动时自动检查</strong><span>每次启动都会检查；新版本由你确认后才会下载</span></div>
+          <span class="switch"><input type="checkbox" id="settingsUpdateAuto" aria-label="自动检查更新"><i></i></span>
+        </label>
+        <div class="setting-row">
+          <div><label for="settingsUpdateChannel"><strong>更新通道</strong></label><span>测试版优先体验，稳定版适合日常使用</span></div>
+          <select class="cs-input settings-choice" id="settingsUpdateChannel"><option value="test">测试版</option><option value="stable">稳定版</option></select>
+        </div>
+      </section>
+      <details class="settings-advanced" id="settingsAdvanced">
+        <summary>
+          <span><strong>高级与开发者配置</strong><small>诊断与开发者选项</small></span>
+          <svg><use href="#i-back"/></svg>
+        </summary>
+        <div class="settings-advanced-body">
           <div class="setting-row column diagnostics-block">
             <div class="diagnostics-head">
               <div><strong>运行诊断</strong><span>重新检查只读本地状态，不会请求模型或语音服务</span></div>
@@ -1595,6 +1595,10 @@
             <div class="diagnostics-list" id="diagnosticsList" aria-live="polite">
               <p class="cs-hint">打开设置后自动检查本地状态。</p>
             </div>
+          </div>
+          <div class="setting-row">
+            <div><strong>开发者工具</strong><span>打开或关闭 WebView 调试面板（也可按 F12）</span></div>
+            <button class="ghost" id="settingsDevtools" type="button">打开</button>
           </div>
           <div class="setting-row about">
             <div><strong>星伴</strong><span>纯本地桌面客户端</span></div>

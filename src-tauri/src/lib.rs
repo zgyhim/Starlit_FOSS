@@ -145,6 +145,7 @@ pub fn run() {
             ipc::open_data_dir,
             ipc::read_log_tail,
             ipc::log_message,
+            ipc::toggle_devtools,
             api::identity,
             api::list_characters,
             api::list_groups,

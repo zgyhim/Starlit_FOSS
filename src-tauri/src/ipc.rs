@@ -59,6 +59,24 @@ pub fn window_state(window: tauri::WebviewWindow) -> Result<WindowState, String>
 }
 
 #[tauri::command]
+pub fn toggle_devtools(window: tauri::WebviewWindow) -> Result<bool, String> {
+    #[cfg(all(desktop, debug_assertions))]
+    {
+        if window.is_devtools_open() {
+            window.close_devtools();
+            return Ok(false);
+        }
+        window.open_devtools();
+        return Ok(true);
+    }
+    #[cfg(not(all(desktop, debug_assertions)))]
+    {
+        let _ = window;
+        Err("当前构建未启用开发者工具".into())
+    }
+}
+
+#[tauri::command]
 pub fn open_data_dir(state: State<'_, AppState>) -> Result<(), String> {
     #[cfg(desktop)]
     {
