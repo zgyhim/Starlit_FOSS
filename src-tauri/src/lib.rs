@@ -1,5 +1,6 @@
 mod api;
 mod autonomy;
+mod compat;
 mod config;
 mod db;
 mod ipc;
@@ -18,6 +19,8 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    compat::ensure_supported();
+
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {

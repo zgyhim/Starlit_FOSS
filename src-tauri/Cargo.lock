@@ -3908,6 +3908,8 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "winapi",
+ "winreg",
  "zip",
  "zstd 0.14.3",
 ]
