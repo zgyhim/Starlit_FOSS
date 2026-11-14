@@ -115,19 +115,7 @@
     stickerBtn: $('#stickerBtn'),
     imageBtn: $('#imageBtn'),
     fileInput: $('#fileInput'),
-    voiceBtn: $('#voiceBtn'),
-    voiceRecorder: $('#voiceRecorder'),
     composerBox: $('#composerBox'),
-    voiceCancel: $('#voiceCancel'),
-    voiceRecordDot: $('#voiceRecordDot'),
-    voiceStatus: $('#voiceStatus'),
-    voiceTime: $('#voiceTime'),
-    voicePreview: $('#voicePreview'),
-    voiceStop: $('#voiceStop'),
-    voiceSend: $('#voiceSend'),
-    voiceHoldBar: $('#voiceHoldBar'),
-    voiceHoldText: $('#voiceHoldText'),
-    voiceHoldTime: $('#voiceHoldTime'),
 
     emojiPanel: $('#emojiPanel'),
     emojiTabs: $('#emojiTabs'),
@@ -563,19 +551,6 @@
     diagnosticsRequestSeq: 0,
     ttsSettings: null,      // 全局语音服务（不含明文密钥）
     voiceConfigs: {},       // 角色 id -> enabled / auto / voice_id / speed
-    userVoice: {
-      phase: 'idle',        // idle / starting / recording / stopping / preview / sending
-      peer: '',
-      recorder: null,
-      stream: null,
-      chunks: [],
-      startedAt: 0,
-      duration: 0,
-      timer: 0,
-      blob: null,
-      objectUrl: '',
-      seq: 0,
-    },
     voicePlayback: {
       current: null,        // 用户语音；与角色 TTS 的 speech 状态分开
       failedKey: '',
@@ -1774,7 +1749,6 @@
       ? `和${curPeerName()}说点什么…` : '连接断开，正在重连…';
     updateDocTitle();
     if (els.btnChatStyle) els.btnChatStyle.classList.toggle('hidden', g);
-    if (els.voiceBtn) els.voiceBtn.classList.toggle('hidden', g);
     if (els.btnGroupSet) els.btnGroupSet.classList.toggle('hidden', !g);
     if (els.btnGroupAt) els.btnGroupAt.classList.toggle('hidden', !g);
     if (els.groupSide) {
@@ -4785,7 +4759,6 @@
     if (next !== prev) {
       stopSpeech({ clearCache: true });
       stopVoicePlayback();
-      resetVoiceRecorder();
     }
     if (prev && prev !== '0') {
       if (prev.charAt(0) === 'g') state.groupMsgs[prev.slice(1)] = state.msgs;
@@ -5606,7 +5579,7 @@
   }
 
   function voiceCaptureActive() {
-    return ['starting', 'recording', 'stopping'].includes(state.userVoice.phase);
+    return false;
   }
 
   function toggleVoicePlayback(msg, seg, key) {
@@ -6777,412 +6750,6 @@
     }
   }
 
-  // ---------------------------------------------------------- 用户语音录制
-  const VOICE_MAX_SECONDS = 60;
-
-  // 按住说话：只在移动端（触摸）生效，桌面仍是点一下打开录音面板。
-  let voiceHold = null;
-  let voiceClickSuppressUntil = 0;
-
-  function renderVoiceHoldBar() {
-    const v = state.userVoice;
-    const active = !!(voiceHold && v.phase === 'recording');
-    els.voiceHoldBar.classList.toggle('hidden', !active);
-    if (!active) return;
-    els.voiceHoldBar.classList.toggle('is-canceling', !!voiceHold.canceled);
-    els.voiceHoldText.textContent = voiceHold.canceled
-      ? '松开取消' : '松开发送 · 上滑取消';
-    els.voiceHoldTime.textContent = formatVoiceDuration(v.duration, true);
-  }
-
-  function renderVoiceRecorder() {
-    const v = state.userVoice;
-    const hold = !!(voiceHold && v.phase === 'recording');
-    const visible = v.phase !== 'idle';
-    const preview = v.phase === 'preview' || v.phase === 'sending';
-    const stopping = v.phase === 'starting' || v.phase === 'recording' ||
-      v.phase === 'stopping';
-    const labels = {
-      idle: '准备录音',
-      starting: '正在请求麦克风权限…',
-      recording: '正在录音',
-      stopping: '正在整理录音…',
-      preview: '试听，确认后发送',
-      sending: '正在发送语音…',
-    };
-    els.voiceRecorder.classList.toggle('hidden', !visible || hold);
-    els.composerBox.classList.toggle('hidden', visible && !hold);
-    renderVoiceHoldBar();
-    els.voiceRecorder.classList.toggle('is-recording', v.phase === 'recording');
-    els.voiceStatus.textContent = labels[v.phase] || labels.idle;
-    els.voiceTime.textContent = formatVoiceDuration(v.duration, true);
-    els.voicePreview.classList.toggle('hidden', !preview);
-    els.voiceStop.classList.toggle('hidden', !stopping);
-    els.voiceStop.disabled = v.phase !== 'recording';
-    els.voiceSend.classList.toggle('hidden', !preview);
-    els.voiceSend.disabled = v.phase !== 'preview';
-    els.voiceSend.querySelector('span').textContent =
-      v.phase === 'sending' ? '发送中…' : '发送';
-    els.voiceCancel.disabled = v.phase === 'sending';
-    const cancelLabel = preview ? '丢弃语音' : '取消录音';
-    els.voiceCancel.title = cancelLabel;
-    els.voiceCancel.setAttribute('aria-label', cancelLabel);
-  }
-
-  function stopVoiceStream(stream) {
-    for (const track of (stream?.getTracks?.() || [])) {
-      try { track.stop(); } catch (e) { /* ignore */ }
-    }
-  }
-
-  function pauseVoicePreview() {
-    try { els.voicePreview.pause(); } catch (e) { /* ignore */ }
-  }
-
-  function resetVoiceRecorder() {
-    const v = state.userVoice;
-    v.seq += 1;
-    clearInterval(v.timer);
-    v.timer = 0;
-    const recorder = v.recorder;
-    v.recorder = null;
-    if (recorder) {
-      recorder.ondataavailable = null;
-      recorder.onerror = null;
-      recorder.onstop = null;
-      if (recorder.state !== 'inactive') {
-        try { recorder.stop(); } catch (e) { /* ignore */ }
-      }
-    }
-    stopVoiceStream(v.stream);
-    v.stream = null;
-    pauseVoicePreview();
-    els.voicePreview.removeAttribute('src');
-    try { els.voicePreview.load(); } catch (e) { /* ignore */ }
-    if (v.objectUrl) URL.revokeObjectURL(v.objectUrl);
-    v.phase = 'idle';
-    v.peer = '';
-    v.chunks = [];
-    v.startedAt = 0;
-    v.duration = 0;
-    v.blob = null;
-    v.objectUrl = '';
-    v.holdAutoStop = false;
-    voiceHold = null;
-    renderVoiceRecorder();
-  }
-
-  function voiceRecordingError(error) {
-    const name = String(error?.name || '');
-    if (!window.isSecureContext) {
-      return '当前环境不能录音，请使用 HTTPS 或 localhost 打开';
-    }
-    if (name === 'NotAllowedError' || name === 'SecurityError') {
-      return window.starlitAndroid
-        ? '没有获得麦克风权限，请在星伴的系统权限设置中允许后重试'
-        : '没有获得麦克风权限，请在浏览器地址栏中允许后重试';
-    }
-    if (name === 'NotFoundError' || name === 'OverconstrainedError') {
-      return '没有检测到可用麦克风';
-    }
-    if (name === 'NotReadableError') {
-      return '麦克风正被其他应用占用，请关闭后重试';
-    }
-    return '录音失败：' + (error?.message || '请检查浏览器麦克风设置');
-  }
-
-  function preferredRecorderMime() {
-    if (typeof MediaRecorder.isTypeSupported !== 'function') return '';
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/ogg;codecs=opus',
-      'audio/mp4',
-      'audio/webm',
-    ];
-    return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
-  }
-
-  function finishVoiceRecording(seq) {
-    const v = state.userVoice;
-    if (v.seq !== seq || !['recording', 'stopping'].includes(v.phase)) return;
-    clearInterval(v.timer);
-    v.timer = 0;
-    if (v.startedAt) {
-      v.duration = Math.min(VOICE_MAX_SECONDS,
-        Math.max(0, (Date.now() - v.startedAt) / 1000));
-    }
-    stopVoiceStream(v.stream);
-    v.stream = null;
-    const recorder = v.recorder;
-    v.recorder = null;
-    const type = recorder?.mimeType || v.chunks.find((part) => part.type)?.type || 'audio/webm';
-    const blob = new Blob(v.chunks, { type });
-    v.chunks = [];
-    if (!blob.size) {
-      resetVoiceRecorder();
-      toast('没有录到声音，请重试');
-      return;
-    }
-    v.blob = blob;
-    v.objectUrl = URL.createObjectURL(blob);
-    v.phase = 'preview';
-    els.voicePreview.src = v.objectUrl;
-    renderVoiceRecorder();
-  }
-
-  function stopVoiceRecording(auto = false) {
-    const v = state.userVoice;
-    if (v.phase !== 'recording') return;
-    v.phase = 'stopping';
-    v.duration = Math.min(VOICE_MAX_SECONDS,
-      Math.max(0, (Date.now() - v.startedAt) / 1000));
-    clearInterval(v.timer);
-    v.timer = 0;
-    stopVoiceStream(v.stream);
-    v.stream = null;
-    renderVoiceRecorder();
-    if (auto) toast(`已录满 ${VOICE_MAX_SECONDS} 秒，自动完成`);
-    try {
-      // 若轨道结束已令 recorder 停止，最终 dataavailable / stop 事件会依次到达；
-      // 不在此处提前合成 Blob，免得漏掉最后一个音频块。
-      if (v.recorder.state !== 'inactive') v.recorder.stop();
-    } catch (e) {
-      resetVoiceRecorder();
-      toast('录音结束失败，请重试');
-    }
-  }
-
-  async function startVoiceRecording() {
-    const v = state.userVoice;
-    if (v.phase !== 'idle' || isGroup()) return;
-    if (!window.isSecureContext) {
-      toast('当前环境不能录音，请使用 HTTPS 或 localhost 打开');
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      toast('当前浏览器不支持录音，请使用新版 Chrome、Edge 或 Safari');
-      return;
-    }
-    stopSpeech({ clearQueue: true, clearCache: false });
-    stopVoicePlayback();
-    pauseVoicePreview();
-    hidePanels();
-    const seq = ++v.seq;
-    v.phase = 'starting';
-    v.peer = curConvKey();
-    v.duration = 0;
-    v.holdAutoStop = false;
-    renderVoiceRecorder();
-    let stream;
-    try {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-      } catch (e) {
-        // 部分 Android WebView / 厂商音频驱动不支持增强约束，却误报成
-        // “其他应用占用”。权限仍在时，用普通单声道输入再尝试一次。
-        if (!['NotReadableError', 'OverconstrainedError', 'AbortError'].includes(e?.name)) throw e;
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      }
-    } catch (e) {
-      if (v.seq !== seq) return;
-      resetVoiceRecorder();
-      toast(voiceRecordingError(e));
-      return;
-    }
-    if (v.seq !== seq) {
-      stopVoiceStream(stream);
-      return;
-    }
-    v.stream = stream;
-    try {
-      const mime = preferredRecorderMime();
-      v.recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-    } catch (e) {
-      resetVoiceRecorder();
-      toast(voiceRecordingError(e));
-      return;
-    }
-    v.chunks = [];
-    v.recorder.ondataavailable = (event) => {
-      if (v.seq === seq && event.data?.size) v.chunks.push(event.data);
-    };
-    v.recorder.onerror = (event) => {
-      if (v.seq !== seq) return;
-      const error = event.error || new Error('录音被中断');
-      resetVoiceRecorder();
-      toast(voiceRecordingError(error));
-    };
-    v.recorder.onstop = () => finishVoiceRecording(seq);
-    try {
-      v.recorder.start(250);
-    } catch (e) {
-      resetVoiceRecorder();
-      toast(voiceRecordingError(e));
-      return;
-    }
-    v.startedAt = Date.now();
-    v.phase = 'recording';
-    renderVoiceRecorder();
-    // 用户在申请麦克风权限期间就松手了：拿到录音流后立刻收尾，避免一直录下去。
-    if (v.holdAutoStop) {
-      v.holdAutoStop = false;
-      stopVoiceRecording();
-      return;
-    }
-    v.timer = setInterval(() => {
-      if (v.seq !== seq || v.phase !== 'recording') return;
-      const elapsed = Math.max(0, (Date.now() - v.startedAt) / 1000);
-      v.duration = Math.min(VOICE_MAX_SECONDS, elapsed);
-      els.voiceTime.textContent = formatVoiceDuration(v.duration, true);
-      if (voiceHold) els.voiceHoldTime.textContent = formatVoiceDuration(v.duration, true);
-      if (elapsed >= VOICE_MAX_SECONDS) stopVoiceRecording(true);
-    }, 200);
-  }
-
-  async function sendVoiceRecording() {
-    const v = state.userVoice;
-    if (v.phase !== 'preview' || !v.blob) return;
-    if (!state.connected) {
-      toast('还没连上，语音已保留，稍后再发送');
-      return;
-    }
-    const seq = v.seq;
-    const peer = v.peer;
-    const blob = v.blob;
-    v.phase = 'sending';
-    pauseVoicePreview();
-    renderVoiceRecorder();
-    try {
-      const dataUrl = await readDataURL(blob);
-      if (v.seq !== seq) return;
-      if (curConvKey() !== peer || isGroup()) {
-        resetVoiceRecorder();
-        toast('会话已切换，这条语音未发送');
-        return;
-      }
-      if (!state.connected) {
-        v.phase = 'preview';
-        renderVoiceRecorder();
-        toast('连接已断开，语音已保留，稍后再发送');
-        return;
-      }
-      const comma = dataUrl.indexOf(',');
-      if (comma < 0) throw new Error('无法读取录音内容');
-      const mime = audioMimeOf(blob.type);
-      const duration = Math.round(Math.max(0, v.duration) * 1000) / 1000;
-      const part = { kind: 'voice', url: dataUrl, mime, durationSeconds: duration };
-      await doSend([part], '[语音]', [part]);
-      if (v.seq === seq) resetVoiceRecorder();
-    } catch (e) {
-      if (v.seq !== seq) return;
-      v.phase = 'preview';
-      renderVoiceRecorder();
-      toast('语音发送失败：' + (e?.message || e));
-    }
-  }
-
-  // 移动端「按住说话」：按下即录，松手结束进入试听；上滑超过 56px 取消。
-  const VOICE_HOLD_CANCEL_PX = 56;
-
-  function voiceHoldEligible(e) {
-    return e.pointerType !== 'mouse' &&
-      window.matchMedia('(max-width: 880px)').matches;
-  }
-
-  function finishVoiceHold(canceled) {
-    const hold = voiceHold;
-    if (!hold) return;
-    voiceHold = null;
-    try { els.voiceBtn.releasePointerCapture(hold.pointerId); } catch (e) { /* ignore */ }
-    voiceClickSuppressUntil = Date.now() + 500;
-    const v = state.userVoice;
-    if (hold.canceled || canceled) {
-      resetVoiceRecorder();
-      toast('已取消录音');
-      return;
-    }
-    const pressedMs = Date.now() - (hold.startedAt || Date.now());
-    // 轻点（不是按住）→ 打开原来的录音面板继续录，避免「刚点一下就提示太短」。
-    if (pressedMs < 350) {
-      v.holdAutoStop = false;
-      renderVoiceRecorder();
-      return;
-    }
-    if (v.phase === 'starting') {
-      v.holdAutoStop = true;
-      renderVoiceRecorder();
-      return;
-    }
-    if (v.phase !== 'recording') return;
-    if (Date.now() - (v.startedAt || Date.now()) < 800) {
-      resetVoiceRecorder();
-      toast('说话时间太短，请按住再说');
-      return;
-    }
-    stopVoiceRecording();
-  }
-
-  els.voiceBtn.addEventListener('pointerdown', (e) => {
-    if (!voiceHoldEligible(e)) return;
-    if (state.userVoice.phase !== 'idle' || isGroup()) return;
-    e.preventDefault();
-    voiceHold = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      startedAt: Date.now(),
-      canceled: false,
-    };
-    voiceClickSuppressUntil = Date.now() + 900;
-    try { els.voiceBtn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    startVoiceRecording();
-  });
-
-  els.voiceBtn.addEventListener('pointermove', (e) => {
-    if (!voiceHold || e.pointerId !== voiceHold.pointerId) return;
-    const canceled = e.clientY - voiceHold.startY < -VOICE_HOLD_CANCEL_PX;
-    if (canceled === voiceHold.canceled) return;
-    voiceHold.canceled = canceled;
-    if (canceled && navigator.vibrate) {
-      try { navigator.vibrate(12); } catch (err) { /* ignore */ }
-    }
-    renderVoiceHoldBar();
-  });
-
-  els.voiceBtn.addEventListener('pointerup', (e) => {
-    if (!voiceHold || e.pointerId !== voiceHold.pointerId) return;
-    finishVoiceHold(false);
-  });
-
-  els.voiceBtn.addEventListener('pointercancel', (e) => {
-    if (!voiceHold || e.pointerId !== voiceHold.pointerId) return;
-    finishVoiceHold(true);
-  });
-
-  els.voiceBtn.addEventListener('click', () => {
-    if (Date.now() < voiceClickSuppressUntil) return;
-    startVoiceRecording();
-  });
-  els.voiceBtn.addEventListener('contextmenu', (e) => {
-    if (voiceHold) e.preventDefault();
-  });
-  els.voiceCancel.addEventListener('click', resetVoiceRecorder);
-  els.voiceStop.addEventListener('click', () => stopVoiceRecording());
-  els.voiceSend.addEventListener('click', sendVoiceRecording);
-  els.voicePreview.addEventListener('play', () => {
-    stopSpeech({ clearQueue: true, clearCache: false });
-    stopVoicePlayback();
-  });
-
-  function syncVoiceHoldAffordance() {
-    const mobile = window.matchMedia('(max-width: 880px)').matches;
-    els.voiceBtn.title = mobile ? '按住说话' : '语音';
-    els.voiceBtn.setAttribute('aria-label', mobile ? '按住说话' : '录制语音');
-  }
-  syncVoiceHoldAffordance();
-
   els.input.addEventListener('paste', (e) => {
     const items = [...(e.clipboardData?.items || [])];
     const files = items.filter((it) => it.type.startsWith('image/'))
@@ -7516,7 +7083,6 @@
 
   function queueAutoSpeech(msg) {
     if (isGroup() || document.hidden || !viewingChat()) return;
-    if (state.userVoice.phase !== 'idle') return;
     if (state.voicePlayback.current && !state.voicePlayback.current.audio?.paused) return;
     const peerId = curConvKey();
     const voice = state.voiceConfigs[peerId];
@@ -11918,7 +11484,6 @@
     saveCurrentDraft();
     els.appView.classList.remove('mobile-chat');
     stopVoicePlayback();
-    resetVoiceRecorder();
     hidePanels();
     closeMobileActions(false);
     setMobileTab('messages');
@@ -12136,7 +11701,6 @@
     closeMobileComposerActions(act === 'close');
     if (act === 'image') els.imageBtn.click();
     else if (act === 'sticker') showPanel('stickerPanel');
-    else if (act === 'voice') els.voiceBtn.click();
   });
   els.mobileActions.addEventListener('click', (e) => {
     if (e.target === els.mobileActions) {
@@ -12360,9 +11924,6 @@
       if (!els.settingsMask.classList.contains('hidden')) {
         els.settingsMask.classList.add('hidden'); return;
       }
-      if (state.userVoice.phase !== 'idle' && state.userVoice.phase !== 'sending') {
-        resetVoiceRecorder(); return;
-      }
       if (!els.convActions.classList.contains('hidden')) {
         closeConversationActions(true); return;
       }
@@ -12440,7 +12001,6 @@
     if (document.hidden) {
       stopSpeech({ clearQueue: true, clearCache: true });
       stopVoicePlayback();
-      resetVoiceRecorder();
       return;
     }
     if (viewingChat()) clearUnread();
@@ -12450,7 +12010,6 @@
     saveCurrentDraft();
     stopSpeech({ clearQueue: true, clearCache: true });
     stopVoicePlayback();
-    resetVoiceRecorder();
   });
   window.addEventListener('focus', () => {
     if (viewingChat()) clearUnread();

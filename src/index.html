@@ -410,28 +410,6 @@
           <svg><use href="#i-close"/></svg>
         </button>
       </div>
-      <div class="voice-recorder hidden" id="voiceRecorder" aria-live="polite">
-        <button class="icon-btn voice-cancel" id="voiceCancel" type="button" title="取消" aria-label="取消录音">
-          <svg><use href="#i-close"/></svg>
-        </button>
-        <div class="voice-recorder-main">
-          <div class="voice-recording-line">
-            <span class="voice-record-dot" id="voiceRecordDot"></span>
-            <strong id="voiceStatus">准备录音</strong>
-            <span class="voice-time" id="voiceTime">0:00</span>
-          </div>
-          <audio id="voicePreview" class="voice-preview hidden" controls preload="metadata"></audio>
-        </div>
-        <button class="ghost voice-action" id="voiceStop" type="button">完成</button>
-        <button class="send-btn voice-send hidden" id="voiceSend" type="button">
-          <span>发送</span><svg><use href="#i-send"/></svg>
-        </button>
-      </div>
-      <div class="voice-hold-bar hidden" id="voiceHoldBar" aria-live="polite">
-        <span class="vh-dot"></span>
-        <span class="vh-text" id="voiceHoldText">松开发送 · 上滑取消</span>
-        <span class="vh-time" id="voiceHoldTime">0:00</span>
-      </div>
       <div class="composer-box" id="composerBox">
         <div class="mention-popup hidden" id="mentionPopup" role="listbox"></div>
         <div class="composer-row">
@@ -447,9 +425,6 @@
             </button>
             <button class="tool-btn" id="imageBtn" title="图片" aria-label="发送图片">
               <svg><use href="#i-image"/></svg>
-            </button>
-            <button class="tool-btn" id="voiceBtn" title="语音" aria-label="录制语音">
-              <svg><use href="#i-mic"/></svg>
             </button>
             <button class="tool-btn mobile-only" id="mobileMoreBtn" title="更多" aria-label="更多">
               <svg><use href="#i-plus"/></svg>
@@ -582,7 +557,6 @@
     <div class="sheet composer-action-sheet">
       <button data-composer-act="image"><svg><use href="#i-image"/></svg>发送图片</button>
       <button data-composer-act="sticker"><svg><use href="#i-sticker"/></svg>选择表情包</button>
-      <button data-composer-act="voice"><svg><use href="#i-mic"/></svg>录制语音</button>
       <button data-composer-act="close" class="cancel">取消</button>
     </div>
   </div>
