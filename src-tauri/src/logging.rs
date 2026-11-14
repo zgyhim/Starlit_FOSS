@@ -112,6 +112,20 @@ pub fn init(log_file: &Path) -> Result<(), String> {
                 std::thread::sleep(std::time::Duration::from_millis(600));
             }
             default_hook(info);
+
+            // 明确退出进程：多个手段依次兜底。
+            if let Some(app) = EMITTER.get() {
+                app.exit(1);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            #[cfg(unix)]
+            unsafe {
+                libc::_exit(1);
+            }
+            #[allow(unreachable_code)]
+            {
+                std::process::exit(1);
+            }
         }));
         info(
             "app",
