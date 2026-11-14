@@ -36,7 +36,6 @@
     connectView: $('#connectView'),
     connectState: $('#connectState'),
     connectStateText: $('#connectStateText'),
-    connectBtn: $('#connectBtn'),
     connectTip: $('#connectTip'),
 
     appView: $('#appView'),
@@ -244,9 +243,6 @@
     characterTrialSend: $('#characterTrialSend'),
     characterCancel: $('#characterCancel'),
     characterCreate: $('#characterCreate'),
-    settingsUrl: $('#settingsUrl'),
-    settingsReconnect: $('#settingsReconnect'),
-    settingsStapxs: $('#settingsStapxs'),
 
     chatSettingsMask: $('#chatSettingsMask'),
     chatSettingsClose: $('#chatSettingsClose'),
@@ -9607,8 +9603,6 @@
     } else if (act === 'stickerManage') {
       showPanel('stickerPanel');
       setStickerManage(true);
-    } else if (act === 'reconnect') {
-      reconnectNow();
     } else if (act === 'clear') {
       if (!state.msgs.length) { toast('没有可清空的消息'); return; }
       if (confirm('清空本机显示？不会删除 星伴 的记忆和聊天记录。')) {
@@ -9625,8 +9619,6 @@
         renderAll(false);
         syncConvPreview();
       }
-    } else if (act === 'stapxs') {
-      window.open('/stapxs/', '_blank');
     }
   });
 
@@ -9759,7 +9751,6 @@
   }
 
   function revealSettings() {
-    els.settingsUrl.textContent = '本地 IPC';
     updateNotificationSettings();
     els.settingsMask.classList.remove('hidden');
   }
@@ -10621,11 +10612,6 @@
   els.settingsMask.addEventListener('click', (e) => {
     if (e.target === els.settingsMask) els.settingsMask.classList.add('hidden');
   });
-  els.settingsReconnect.addEventListener('click', () => {
-    els.settingsMask.classList.add('hidden');
-    reconnectNow();
-  });
-  els.settingsStapxs.addEventListener('click', () => window.open('/stapxs/', '_blank'));
   els.setupComplete.addEventListener('click', completeSetupFlow);
   els.settingsLlmSave.addEventListener('click', () => saveLlmSettings());
   els.settingsLlmTest.addEventListener('click', () => runDiagnosticTest('llm'));

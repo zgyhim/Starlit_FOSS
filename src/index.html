@@ -208,7 +208,6 @@
     <div class="connect-state" id="connectState" role="status" aria-live="polite">
       <span class="pulse"></span><span id="connectStateText">正在连接…</span>
     </div>
-    <button class="primary" id="connectBtn">重新连接</button>
     <p class="connect-tip" id="connectTip">所有数据都保存在本机。</p>
   </div>
   <button class="connect-bg-btn" id="connectBgPick" type="button" title="换一张登录背景">
@@ -662,9 +661,7 @@
   <button data-act="createGroup"><svg><use href="#i-group"/></svg>创建群聊</button>
   <button data-act="chatStyle"><svg><use href="#i-palette"/></svg>聊天设置</button>
   <button data-act="stickerManage"><svg><use href="#i-edit"/></svg>管理表情包</button>
-  <button data-act="reconnect"><svg><use href="#i-refresh"/></svg>重新连接</button>
   <button data-act="clear">清空本地显示</button>
-  <button data-act="stapxs">打开经典客户端（Stapxs）</button>
 </div>
 
 <!-- 群成员行操作菜单 -->
@@ -1598,14 +1595,6 @@
             <div class="diagnostics-list" id="diagnosticsList" aria-live="polite">
               <p class="cs-hint">打开设置后自动检查本地状态。</p>
             </div>
-          </div>
-          <div class="setting-row">
-            <div><strong>连接地址</strong><span id="settingsUrl">-</span></div>
-            <button class="ghost" id="settingsReconnect">重新连接</button>
-          </div>
-          <div class="setting-row">
-            <div><strong>经典客户端</strong><span>Stapxs QQ Lite（功能更全）</span></div>
-            <button class="ghost" id="settingsStapxs">打开</button>
           </div>
           <div class="setting-row about">
             <div><strong>星伴</strong><span>纯本地桌面客户端</span></div>
