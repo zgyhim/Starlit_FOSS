@@ -44,6 +44,7 @@
       invoke("character_draft_generate", { name, avatar }),
     diagnosticsTest: (target) => invoke("diagnostics_test", { target }),
     toggleDevtools: () => invoke("toggle_devtools"),
+    openRepo: () => invoke("open_repo"),
     getSettings: () => invoke("get_settings"),
     saveSettings: (payload) => invoke("save_settings", { payload }),
     createBackup: () => invoke("create_backup"),

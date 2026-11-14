@@ -59,6 +59,19 @@ pub fn window_state(window: tauri::WebviewWindow) -> Result<WindowState, String>
 }
 
 #[tauri::command]
+pub fn open_repo() -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        return open::that("https://github.com/zgyhim/Starlit_FOSS")
+            .map_err(|e| format!("打开仓库失败: {e}"));
+    }
+    #[cfg(mobile)]
+    {
+        Err("当前平台不支持打开浏览器".into())
+    }
+}
+
+#[tauri::command]
 pub fn toggle_devtools(window: tauri::WebviewWindow) -> Result<bool, String> {
     #[cfg(all(desktop, debug_assertions))]
     {

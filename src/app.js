@@ -215,6 +215,8 @@
     settingsBackup: $('#settingsBackup'),
     settingsRestore: $('#settingsRestore'),
     settingsDevtools: $('#settingsDevtools'),
+    settingsAboutVersion: $('#settingsAboutVersion'),
+    settingsAboutRepo: $('#settingsAboutRepo'),
     settingsRestoreInput: $('#settingsRestoreInput'),
     settingsCacheState: $('#settingsCacheState'),
     settingsClearCache: $('#settingsClearCache'),
@@ -9595,6 +9597,12 @@
     loadServiceSettings();
     loadDiagnostics();
     loadMediaCacheInfo();
+    if (els.settingsAboutVersion) {
+      api.appInfo().then((info) => {
+        els.settingsAboutVersion.textContent =
+          `v${info.version} · AGPL-3.0 · 本地优先`;
+      }).catch(() => {});
+    }
   }
 
   function setSettingsNotice(message = '', kind = 'error') {
@@ -12589,6 +12597,12 @@
   document.addEventListener('contextmenu', (event) => {
     if (!event.defaultPrevented) event.preventDefault();
   });
+
+  if (els.settingsAboutRepo) {
+    els.settingsAboutRepo.addEventListener('click', () => {
+      api.openRepo().catch(() => toast('打开仓库失败'));
+    });
+  }
 
   if (els.settingsDevtools) {
     els.settingsDevtools.addEventListener('click', async () => {

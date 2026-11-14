@@ -146,6 +146,7 @@ pub fn run() {
             ipc::read_log_tail,
             ipc::log_message,
             ipc::toggle_devtools,
+            ipc::open_repo,
             api::identity,
             api::list_characters,
             api::list_groups,
