@@ -6,16 +6,18 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
-    Error = 0,
-    Warn = 1,
-    Info = 2,
-    Debug = 3,
-    Trace = 4,
+    Fatal = 0,
+    Error = 1,
+    Warn = 2,
+    Info = 3,
+    Debug = 4,
+    Trace = 5,
 }
 
 impl Level {
     fn letter(self) -> &'static str {
         match self {
+            Level::Fatal => "F",
             Level::Error => "E",
             Level::Warn => "W",
             Level::Info => "I",
@@ -26,6 +28,7 @@ impl Level {
 
     fn color(self) -> &'static str {
         match self {
+            Level::Fatal => "\x1b[1;35m",
             Level::Error => "\x1b[1;31m",
             Level::Warn => "\x1b[1;33m",
             Level::Info => "\x1b[1;32m",
@@ -73,7 +76,20 @@ pub fn init(log_file: &Path) -> Result<(), String> {
                 .location()
                 .map(|l| format!("{}:{}", l.file(), l.line()))
                 .unwrap_or_else(|| "unknown".into());
-            error("panic", &format!("{info} @ {location}"));
+            fatal("panic", &format!("{info} @ {location}"));
+            // 致命错误不推给前端；尝试用系统对话框告知用户。
+            if let Some(app) = EMITTER.get() {
+                use tauri_plugin_dialog::DialogExt;
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    app.dialog()
+                        .message(
+                            "应用程序遇到错误，无法继续运行。\n\n请重新启动星伴；如果反复出现，请查看数据目录下的 desktop.log。",
+                        )
+                        .title("星伴")
+                        .show(|_| {});
+                }));
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
             default_hook(info);
         }));
         info(
@@ -107,6 +123,11 @@ pub fn set_level(level: Level) {
     MIN_LEVEL.store(level as u8, Ordering::Relaxed);
 }
 
+/// 致命级别：只用于 panic / 无法恢复的错误，不推送到前端。
+pub fn fatal(tag: &str, message: &str) {
+    log(Level::Fatal, tag, message);
+}
+
 pub fn error(tag: &str, message: &str) {
     log(Level::Error, tag, message);
 }
@@ -129,7 +150,7 @@ pub fn trace(tag: &str, message: &str) {
 
 /// logcat 风格：`11-14 23:45:01.123  1234  5678 I/StarLit(media): message`
 pub fn log(level: Level, tag: &str, message: &str) {
-    if (level as u8) > MIN_LEVEL.load(Ordering::Relaxed) {
+    if level != Level::Fatal && (level as u8) > MIN_LEVEL.load(Ordering::Relaxed) {
         return;
     }
     let now = chrono::Local::now();
