@@ -52,6 +52,19 @@ thread_local! {
     static TID: u64 = NEXT_TID.fetch_add(1, Ordering::Relaxed);
 }
 
+fn force_exit(app: Option<tauri::AppHandle>) -> ! {
+    if let Some(app) = app {
+        app.exit(1);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    #[cfg(unix)]
+    unsafe {
+        libc::_exit(1);
+    }
+    #[cfg(not(unix))]
+    std::process::exit(1);
+}
+
 /// 初始化日志文件、级别与 panic hook。可重复调用，只生效一次。
 pub fn init(log_file: &Path) -> Result<(), String> {
     if let Some(parent) = log_file.parent() {
@@ -85,6 +98,7 @@ pub fn init(log_file: &Path) -> Result<(), String> {
             };
             fatal("panic", &format!("{detail} @ {location}"));
             // 致命错误不推给前端；尝试用系统对话框告知用户，并附上详情。
+            let mut dialog_message = String::new();
             if let Some(app) = EMITTER.get() {
                 use tauri_plugin_dialog::DialogExt;
                 let log_path = LOG_FILE
@@ -96,36 +110,48 @@ pub fn init(log_file: &Path) -> Result<(), String> {
                 } else {
                     detail
                 };
-                let message = format!(
+                dialog_message = format!(
                     "应用程序遇到错误，无法继续运行。\n\n\
                      错误：{detail}\n\
                      位置：{location}\n\
                      日志：{log_path}\n\n\
                      请重新启动星伴；如果反复出现，请把日志一并反馈。"
                 );
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    app.dialog()
-                        .message(message)
-                        .title("星伴 · 致命错误")
-                        .show(|_| {});
-                }));
-                std::thread::sleep(std::time::Duration::from_millis(600));
+
+                let is_main = std::thread::current().name() == Some("main");
+                if is_main {
+                    // 主线程 panic 时事件循环无法再处理对话框，只能短暂展示后退出。
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        app.dialog()
+                            .message(&dialog_message)
+                            .title("星伴 · 致命错误")
+                            .show(|_| {});
+                    }));
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                } else {
+                    // 后台线程：对话框能正常运行时，阻塞等待用户关闭。
+                    let app_for_watchdog = app.clone();
+                    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let finished_for_watchdog = finished.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(120));
+                        if !finished_for_watchdog.load(std::sync::atomic::Ordering::Relaxed) {
+                            force_exit(Some(app_for_watchdog));
+                        }
+                    });
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        app.dialog()
+                            .message(&dialog_message)
+                            .title("星伴 · 致命错误")
+                            .blocking_show();
+                    }));
+                    finished.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             default_hook(info);
 
             // 明确退出进程：多个手段依次兜底。
-            if let Some(app) = EMITTER.get() {
-                app.exit(1);
-            }
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            #[cfg(unix)]
-            unsafe {
-                libc::_exit(1);
-            }
-            #[allow(unreachable_code)]
-            {
-                std::process::exit(1);
-            }
+            force_exit(EMITTER.get().cloned());
         }));
         info(
             "app",
