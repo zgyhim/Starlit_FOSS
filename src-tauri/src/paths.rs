@@ -211,6 +211,12 @@ fn data_dir() -> Result<PathBuf, String> {
 
 fn resolve_resources(app: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;
+    #[cfg(mobile)]
+    {
+        if let Ok(root) = app.path().app_data_dir() {
+            return root.join("embedded-resources");
+        }
+    }
     #[cfg(desktop)]
     if cfg!(debug_assertions) {
         let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources");

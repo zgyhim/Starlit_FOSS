@@ -13,6 +13,13 @@ pub enum LockError {
 
 impl InstanceLock {
     pub fn acquire(root: &Path) -> Result<Self, LockError> {
+        #[cfg(mobile)]
+        {
+            let _ = root;
+            return Ok(Self { files: Vec::new() });
+        }
+        #[cfg(desktop)]
+        {
         let files = vec![
             root.join(".starlit.lock"),
             root.join("data").join("companion.db.lock"),
@@ -39,6 +46,7 @@ impl InstanceLock {
             }
         }
         Ok(Self { files })
+        }
     }
 }
 

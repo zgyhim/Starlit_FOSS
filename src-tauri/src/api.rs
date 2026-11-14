@@ -594,6 +594,9 @@ fn kv_set(state: &AppState, key: &str, value: &str) -> Result<(), String> {
 }
 
 pub fn auto_clear_enabled(state: &AppState) -> bool {
+    if cfg!(mobile) {
+        return false;
+    }
     kv_get(state, "media.auto_clear_on_exit").as_deref() == Some("1")
 }
 
@@ -613,6 +616,7 @@ pub fn media_cache_info(state: State<'_, AppState>) -> Value {
     let (archives, bytes) = crate::media::cache_stats(&state.paths);
     json!({
         "autoClear": auto_clear_enabled(&state),
+        "disabled": cfg!(mobile),
         "pending": state.pending_media_clear.load(std::sync::atomic::Ordering::Relaxed),
         "archives": archives,
         "bytes": bytes,
@@ -621,6 +625,9 @@ pub fn media_cache_info(state: State<'_, AppState>) -> Value {
 
 #[tauri::command]
 pub fn set_media_auto_clear(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    if cfg!(mobile) {
+        return Ok(());
+    }
     kv_set(&state, "media.auto_clear_on_exit", if enabled { "1" } else { "0" })
 }
 
@@ -636,6 +643,9 @@ pub fn media_status(state: State<'_, AppState>) -> Value {
 
 #[tauri::command]
 pub fn clear_media_cache(state: State<'_, AppState>) -> Value {
+    if cfg!(mobile) {
+        return json!({ "scheduled": false, "disabled": true });
+    }
     state
         .pending_media_clear
         .store(true, std::sync::atomic::Ordering::Relaxed);

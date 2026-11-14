@@ -199,11 +199,31 @@ pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) -> Vec<String
             progress(done.min(total) as usize, total as usize);
         }
     }
+    #[cfg(mobile)]
+    if errors.is_empty() {
+        // Android：归档已内嵌在 APK，解压成功后删除复制出来的副本，节省约 760 MB。
+        let media = paths.resources.join("media");
+        if let Ok(entries) = fs::read_dir(&media) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains(".tar.zst") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
     errors
 }
 
 /// 删除所有由资源包解压出来的文件，保留用户自己上传的内容。
 pub fn clear_cache(paths: &Paths) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = paths;
+        return Ok(());
+    }
+    #[cfg(desktop)]
+    {
     let cache = paths.root.join(".cache").join("media");
     let Ok(entries) = fs::read_dir(&cache) else {
         return Ok(());
@@ -232,6 +252,7 @@ pub fn clear_cache(paths: &Paths) -> Result<(), String> {
         }
     }
     Ok(())
+    }
 }
 
 pub fn cache_stats(paths: &Paths) -> (usize, u64) {

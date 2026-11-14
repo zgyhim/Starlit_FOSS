@@ -10649,6 +10649,15 @@
     try {
       const info = await api.mediaCacheInfo();
       const mb = (Number(info.bytes || 0) / 1048576).toFixed(1);
+      if (info.disabled) {
+        els.settingsAutoClearCache.checked = false;
+        els.settingsAutoClearCache.disabled = true;
+        els.settingsClearCache.disabled = true;
+        els.settingsCacheState.textContent = 'Android 资源已内嵌，解压缓存不可清理';
+        return;
+      }
+      els.settingsAutoClearCache.disabled = false;
+      els.settingsClearCache.disabled = false;
       els.settingsAutoClearCache.checked = !!info.autoClear;
       els.settingsCacheState.textContent = info.pending
         ? '已安排退出后清理'
