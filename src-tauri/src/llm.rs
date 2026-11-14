@@ -194,7 +194,10 @@ pub async fn chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            crate::logging::warn("llm", &format!("request failed: {e}"));
+            e.to_string()
+        })?;
     let status = response.status();
     let body: Value = response.json().await.unwrap_or_else(|_| json!({}));
     if !status.is_success() {

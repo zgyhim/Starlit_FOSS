@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{Emitter, State};
 
-use crate::state::{append_log, AppState};
+use crate::state::AppState;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,8 +114,8 @@ pub fn read_log_tail(state: State<'_, AppState>, lines: Option<usize>) -> Result
 }
 
 #[tauri::command]
-pub fn log_message(state: State<'_, AppState>, message: String) {
-    append_log(&state.paths.log_file(), &message);
+pub fn log_message(_state: State<'_, AppState>, message: String) {
+    crate::logging::info("ui", &message);
 }
 
 /// 前端启动时读取，避免首屏需要多次 IPC。

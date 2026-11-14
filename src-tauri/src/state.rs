@@ -56,20 +56,3 @@ impl AppState {
         self.config.read().expect("config lock poisoned").clone()
     }
 }
-
-static LOG_LOCK: Mutex<()> = Mutex::new(());
-
-pub fn append_log(path: &std::path::Path, message: &str) {
-    let _guard = LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    use std::io::Write;
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(file, "[{}] {}", chrono::Local::now().to_rfc3339(), message);
-    }
-}

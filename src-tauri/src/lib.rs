@@ -104,10 +104,10 @@ pub fn run() {
             };
 
             logging::init(&paths.log_file())?;
+            logging::info("app", &format!("data root: {}", paths.root.display()));
             paths.seed()?;
             let config = paths.load_config()?;
             let db = db::Db::open(&paths.db_file())?;
-            let log_file = paths.log_file();
             let paths_for_media = paths.clone();
             app.manage(state::AppState::new(paths, config, db, instance_lock));
             autonomy::spawn(app.handle().clone());
@@ -126,7 +126,7 @@ pub fn run() {
                         state.media_total.store(total, Ordering::Relaxed);
                     }
                 });
-                state::append_log(&log_file, "media cache ready");
+                logging::info("media", "cache ready");
                 if let Some(state) = handle.try_state::<state::AppState>() {
                     if !errors.is_empty() {
                         *state.media_error.lock().expect("media error lock") = errors.join("; ");

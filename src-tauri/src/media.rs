@@ -182,6 +182,7 @@ pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) -> Vec<String
     };
     let total: u64 = manifest.archives.iter().map(|entry| entry.uncompressed).sum();
     let total = if total == 0 { manifest.archives.len() as u64 } else { total };
+    crate::logging::info("media", &format!("extracting {} archives", manifest.archives.len()));
     progress(0, total as usize);
     let mut done = 0u64;
     for entry in &manifest.archives {
@@ -191,7 +192,7 @@ pub fn extract_all(paths: &Paths, progress: impl Fn(usize, usize)) -> Vec<String
             progress(done.min(total) as usize, total as usize);
         };
         if let Err(error) = extract_one(paths, entry, &mut on_bytes) {
-            crate::state::append_log(&paths.log_file(), &format!("media: {error}"));
+            crate::logging::warn("media", &error);
             errors.push(format!("{}: {error}", entry.name));
         }
         if entry.uncompressed == 0 {

@@ -15,6 +15,7 @@
   };
 
   window.api = {
+    appInfo: () => invoke("app_info"),
     identity: () => invoke("identity"),
     listCharacters: () => invoke("list_characters"),
     listGroups: () => invoke("list_groups"),
