@@ -23,8 +23,9 @@ Thumbs.db
 .env.*
 !.env.example
 
-# 本地媒体归档（仓库中提交分片）
+# 媒体包不进入 Git，由 scripts/fetch-media.sh 从 Release 获取
 resources/media/*.tar.zst
+resources/media/*.tar.zst.*
 
 # Tauri Android staging
 src-tauri/gen/android/app/src/main/assets/_up_/

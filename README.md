@@ -126,11 +126,37 @@ reasoning_effort: low
 
 API Key 只保存在本机配置文件里，不上传，也不会写进日志。
 
-### 从源码运行
+### 从源码构建
+
+媒体包（约 759 MB）不放在 Git 仓库里，发布时作为 Release 附件。构建前先准备媒体文件：
+
+```bash
+./scripts/fetch-media.sh
+```
+
+脚本会按 `resources/media/manifest.json` 检查并校验 SHA-256：
+
+- 本地已有完整文件 → 直接使用
+- 只有 `.zst.000` 分片 → 自动合并并校验
+- 都没有 → 从 `manifest.json` 的 `base_url` 下载，可用环境变量覆盖：
+
+```bash
+STARLIT_MEDIA_URL=https://你的地址 ./scripts/fetch-media.sh
+```
+
+
+准备完成后：
 
 ```bash
 npm install
-npm run dev
+npm run dev      # 开发
+npm run build    # 打包
+```
+
+或者一步完成媒体准备与打包：
+
+```bash
+./build.sh
 ```
 
 Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebView2。
