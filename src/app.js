@@ -487,11 +487,6 @@
     announceSave: $('#announceSave'),
     announceClose: $('#announceClose'),
     groupAvatarInput: $('#groupAvatarInput'),
-    gsFileTabs: $('#gsFileTabs'),
-    gsFiles: $('#gsFiles'),
-    gsUpload: $('#gsUpload'),
-    gsFileCount: $('#gsFileCount'),
-    gsFileInput: $('#gsFileInput'),
     quoteBar: $('#quoteBar'),
     qbName: $('#qbName'),
     qbText: $('#qbText'),
@@ -682,8 +677,6 @@
     pendingMentions: [],        // 本次输入里 @ 了谁（发送时转成 at 段）
     mention: { open: false, index: 0, items: [], start: 0, end: 0 },
     replyTo: null,              // 正在引用回复的消息（群里用）
-    groupFiles: {},             // gid(str) -> 群文件列表
-    groupFileTab: 'file',       // 群文件面板的页签：file / album
     avatarTarget: null,        // 当前裁剪的是谁的头像（peer / group）
   };
 
@@ -1662,7 +1655,6 @@
       ]);
       if (isGroup()) {
         loadGroupDetail(state.peer.id);
-        loadGroupFiles(state.peer.id);
       }
       await syncAllConversations();
       state.ready = true;
@@ -4676,7 +4668,6 @@
     if (now - Number(groupDetailRefreshedAt[g] || 0) < 3000) return;
     groupDetailRefreshedAt[g] = now;
     loadGroupDetail(g);
-    loadGroupFiles(g);
   }
 
   // 群成员的「等级 / 角色 / 群名片」是动态的（说得多就升级）。气泡上的徽章
@@ -4855,7 +4846,6 @@
     syncDesktopContactActive();
     renderAll(false);
     if (isGroupTarget) loadGroupDetail(state.peer.id);
-    if (isGroupTarget) loadGroupFiles(state.peer.id);
     renderQuoteBar();
     if (!state.loaded[key]) {
       loadHistoryFor(key);
@@ -8513,7 +8503,6 @@
     }
     renderGroupRequests();
     renderGroupMembers();
-    renderGroupFiles();
   }
 
   function renderGroupRequests() {
@@ -8813,161 +8802,6 @@
   }
 
   if (els.qbClose) els.qbClose.addEventListener('click', clearQuote);
-
-  // ---- 群文件 / 群相册 ----
-
-  async function loadGroupFiles(gid) {
-    const g = String(gid || '');
-    if (!g) return;
-    try {
-      const res = await apiRequest(
-        `/api/groups/files?groupId=${encodeURIComponent(g)}`,
-        { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = await res.json();
-      state.groupFiles[g] = (data && data.files) || [];
-      if (isGroup() && String(state.peer.id) === g) renderGroupFiles();
-    } catch (e) { /* 老服务端没有这个接口 */ }
-  }
-
-  function fileUrl(it, gid) {
-    if (it && it.url) return resolveAsset(it.url);
-    return resolveAsset(`/api/groups/file?groupId=${encodeURIComponent(gid)}`
-      + `&file_id=${encodeURIComponent(it.id)}`);
-  }
-
-  function fmtSize(n) {
-    const v = Number(n || 0);
-    if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB';
-    if (v >= 1024) return (v / 1024).toFixed(0) + ' KB';
-    return v + ' B';
-  }
-
-  function renderGroupFiles() {
-    if (!els.gsFiles || !isGroup()) return;
-    const gid = String(state.peer.id);
-    const items = state.groupFiles[gid] || [];
-    const album = state.groupFileTab === 'album';
-    const list = items.filter((it) => (album ? it.kind === 'image' : true));
-    if (els.gsFileCount) els.gsFileCount.textContent = String(items.length);
-    els.gsFiles.innerHTML = '';
-    if (!list.length) {
-      const empty = document.createElement('p');
-      empty.className = 'cs-hint';
-      empty.textContent = album ? '群相册还是空的' : '还没有群文件';
-      els.gsFiles.appendChild(empty);
-      return;
-    }
-    if (album) {
-      const grid = document.createElement('div');
-      grid.className = 'gs-album';
-      for (const it of list) {
-        if (it.kind !== 'image') continue;
-        const img = document.createElement('img');
-        img.loading = 'lazy';
-        img.alt = it.name;
-        img.src = fileUrl(it, gid);
-        img.addEventListener('click', () => openLightbox(fileUrl(it, gid)));
-        grid.appendChild(img);
-      }
-      els.gsFiles.appendChild(grid);
-      return;
-    }
-    for (const it of list) {
-      const row = document.createElement('div');
-      row.className = 'gs-file';
-      const ico = document.createElement('span');
-      ico.className = 'gs-file-ico';
-      ico.innerHTML = `<svg><use href="#i-${it.kind === 'image' ? 'image' : 'folder'}"/></svg>`;
-      const info = document.createElement('div');
-      info.className = 'gs-file-info';
-      const nm = document.createElement('strong');
-      nm.textContent = it.name;
-      const sub = document.createElement('span');
-      sub.textContent = `${fmtSize(it.size)} · ${it.uploader || ''}`;
-      info.append(nm, sub);
-      const dl = document.createElement('a');
-      dl.className = 'gs-file-dl';
-      dl.href = fileUrl(it, gid);
-      dl.setAttribute('download', it.name);
-      dl.title = '下载';
-      dl.innerHTML = '<svg><use href="#i-download"/></svg>';
-      row.append(ico, info, dl);
-      if (it.uploader && it.uploader === state.me.name) {
-        const del = document.createElement('button');
-        del.className = 'gs-file-del';
-        del.title = '删除';
-        del.innerHTML = '<svg><use href="#i-trash"/></svg>';
-        del.addEventListener('click', () => deleteGroupFile(it));
-        row.appendChild(del);
-      }
-      els.gsFiles.appendChild(row);
-    }
-  }
-
-  async function uploadGroupFiles(files) {
-    if (!isGroup() || !files.length) return;
-    // ★ 群号要**先抓下来**：下面每个文件都要 await 一次上传，如果在上传途中
-    //   用户切到了别的会话，`state.peer.id` 就变了，后面的文件会被传到别的群。
-    const gid = String(state.peer.id);
-    let ok = 0;
-    for (const f of files) {
-      if (f.size > 20 * 1024 * 1024) { toast(`「${f.name}」超过 20MB，跳过`); continue; }
-      try {
-        const dataUrl = await readDataURL(f);
-        const res = await apiRequest('/api/groups/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ groupId: gid, name: f.name, data: dataUrl }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
-        ok += 1;
-      } catch (e) {
-        toast(`「${f.name}」上传失败：` + (e.message || e));
-      }
-    }
-    if (ok) {
-      toast(`已上传 ${ok} 个文件`);
-      await loadGroupFiles(gid);
-    }
-  }
-
-  async function deleteGroupFile(it) {
-    if (!window.confirm(`删除群文件「${it.name}」？`)) return;
-    const gid = String(state.peer.id);
-    try {
-      const res = await apiRequest('/api/groups/files/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: gid, file_id: it.id }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
-      toast('已删除');
-      await loadGroupFiles(gid);
-    } catch (e) { toast('删除失败：' + (e.message || e)); }
-  }
-
-  if (els.gsUpload) els.gsUpload.addEventListener('click', () => {
-    if (!isGroup()) return;
-    els.gsFileInput.value = '';
-    els.gsFileInput.click();
-  });
-  if (els.gsFileInput) els.gsFileInput.addEventListener('change', () => {
-    const files = [...(els.gsFileInput.files || [])];
-    els.gsFileInput.value = '';
-    uploadGroupFiles(files);
-  });
-  if (els.gsFileTabs) els.gsFileTabs.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-ftab]');
-    if (!b) return;
-    state.groupFileTab = b.dataset.ftab;
-    els.gsFileTabs.querySelectorAll('button').forEach((x) => {
-      x.classList.toggle('active', x === b);
-    });
-    renderGroupFiles();
-  });
 
   // ---- 建群 / 邀请 ----
 

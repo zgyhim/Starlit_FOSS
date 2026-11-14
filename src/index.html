@@ -525,19 +525,6 @@
           </div>
           <p class="gs-announce" id="gsAnnounce">还没有群公告</p>
         </section>
-        <section class="gs-card">
-          <div class="gs-card-head">
-            <span><svg class="gs-ic"><use href="#i-folder"/></svg>群文件 <em id="gsFileCount">0</em></span>
-            <button class="ghost mini-btn" id="gsUpload">
-              <svg class="gs-ic"><use href="#i-upload"/></svg>上传
-            </button>
-          </div>
-          <div class="gs-tabs" id="gsFileTabs">
-            <button type="button" class="active" data-ftab="file">文件</button>
-            <button type="button" data-ftab="album">群相册</button>
-          </div>
-          <div class="gs-files" id="gsFiles"></div>
-        </section>
         <section class="gs-card gs-members-card">
           <div class="gs-card-head">
             <span><svg class="gs-ic"><use href="#i-group"/></svg>群聊成员 <em id="gsMemberCount">0</em></span>
@@ -793,7 +780,6 @@
   </div>
 </div>
 <input type="file" id="groupAvatarInput" accept="image/*" hidden>
-<input type="file" id="gsFileInput" multiple hidden>
 
 <!-- 图片预览 -->
 <div class="lightbox hidden" id="lightbox" role="dialog" aria-modal="true" aria-label="查看图片">

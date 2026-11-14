@@ -1041,27 +1041,6 @@ fn group_detail_value(state: &AppState, gid: &str) -> Value {
     })
 }
 
-fn group_files_index(state: &AppState, gid: &str) -> PathBuf {
-    group_dir(state, gid).join("files.json")
-}
-
-fn read_group_files(state: &AppState, gid: &str) -> Vec<Value> {
-    std::fs::read_to_string(group_files_index(state, gid))
-        .ok()
-        .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
-        .unwrap_or_default()
-}
-
-fn write_group_files(state: &AppState, gid: &str, files: &[Value]) -> Result<(), String> {
-    let dir = group_dir(state, gid);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(
-        group_files_index(state, gid),
-        serde_json::to_string_pretty(files).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
-}
-
 fn query_params(url: &str) -> HashMap<String, String> {
     let Some((_, query)) = url.split_once('?') else {
         return HashMap::new();
@@ -1718,67 +1697,6 @@ pub fn api_request(
         }
         return ApiOut { status: 200, body: group_detail_value(&state, gid) };
     }
-
-    if path == "/api/groups/upload" && method == "POST" {
-        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
-            .unwrap_or_else(|_| json!({}));
-        let gid = payload.get("groupId").and_then(Value::as_str).unwrap_or("");
-        let name = payload.get("name").and_then(Value::as_str).unwrap_or("file");
-        let data = payload.get("data").and_then(Value::as_str).unwrap_or("");
-        if gid.is_empty() || data.is_empty() {
-            return ApiOut { status: 200, body: json!({ "ok": false, "error": "缺少群号或文件数据" }) };
-        }
-        let (_, encoded) = data.split_once(',').unwrap_or(("", data));
-        let Ok(bytes) = BASE64.decode(encoded) else {
-            return ApiOut { status: 200, body: json!({ "ok": false, "error": "文件解码失败" }) };
-        };
-        let safe_name = name.rsplit('/').next().unwrap_or("file").replace(['/', '\\'], "_");
-        let stamp = chrono::Utc::now().timestamp_millis();
-        let stored = format!("{stamp}-{safe_name}");
-        let dir = group_dir(&state, gid).join("files");
-        let _ = std::fs::create_dir_all(&dir);
-        if let Err(error) = std::fs::write(dir.join(&stored), &bytes) {
-            return ApiOut { status: 500, body: json!({ "ok": false, "error": error.to_string() }) };
-        }
-        let mut files = read_group_files(&state, gid);
-        let id = stamp.to_string();
-        files.push(json!({
-            "id": id,
-            "name": safe_name,
-            "size": bytes.len(),
-            "ts": chrono::Utc::now().timestamp(),
-            "stored": stored,
-            "url": format!("starlit://local/groups/{gid}/files/{stored}"),
-        }));
-        let _ = write_group_files(&state, gid, &files);
-        return ApiOut { status: 200, body: json!({ "ok": true, "file_id": id }) };
-    }
-
-    if path == "/api/groups/files" {
-        let params = query_params(&url);
-        let gid = params.get("groupId").cloned().unwrap_or_default();
-        let files = read_group_files(&state, &gid);
-        return ApiOut { status: 200, body: json!({ "ok": true, "files": files }) };
-    }
-
-    if path == "/api/groups/files/delete" && method == "POST" {
-        let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
-            .unwrap_or_else(|_| json!({}));
-        let gid = payload.get("groupId").and_then(Value::as_str).unwrap_or("");
-        let file_id = payload.get("file_id").and_then(Value::as_str).unwrap_or("");
-        let mut files = read_group_files(&state, gid);
-        if let Some(pos) = files.iter().position(|item| {
-            item.get("id").and_then(Value::as_str) == Some(file_id)
-        }) {
-            let file = files.remove(pos);
-            if let Some(stored) = file.get("stored").and_then(Value::as_str) {
-                let _ = std::fs::remove_file(group_dir(&state, gid).join("files").join(stored));
-            }
-            let _ = write_group_files(&state, gid, &files);
-        }
-        return ApiOut { status: 200, body: json!({ "ok": true }) };
-    }
-
 
     if path == "/api/conversation/clear" && method == "POST" {
         let payload: Value = serde_json::from_str(body.as_deref().unwrap_or("{}"))
