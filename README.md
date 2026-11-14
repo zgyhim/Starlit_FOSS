@@ -138,7 +138,7 @@ API Key 只保存在本机配置文件里，不上传，也不会写进日志。
 
 - 本地已有完整文件 → 直接使用
 - 只有 `.zst.000` 分片 → 自动合并并校验
-- 都没有 → 从 `manifest.json` 的 `base_url` 下载，可用环境变量覆盖：
+- 都没有 → 从 `manifest.json` 的 `base_url` 下载；未配置时用环境变量指定：
 
 ```bash
 STARLIT_MEDIA_URL=https://你的地址 ./scripts/fetch-media.sh
