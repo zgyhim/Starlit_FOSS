@@ -59,16 +59,13 @@ pub fn window_state(window: tauri::WebviewWindow) -> Result<WindowState, String>
 }
 
 #[tauri::command]
-pub fn open_repo() -> Result<(), String> {
-    #[cfg(desktop)]
-    {
-        return open::that("https://github.com/zgyhim/Starlit_FOSS")
-            .map_err(|e| format!("打开仓库失败: {e}"));
-    }
-    #[cfg(mobile)]
-    {
-        Err("当前平台不支持打开浏览器".into())
-    }
+pub fn show_about(app: tauri::AppHandle) {
+    use tauri_plugin_dialog::DialogExt;
+    let text = "星伴 FOSS 是「星伴」桌面应用的独立重实现。\n\n        前端来自对原版的逆向分析，保留界面、角色、人格和表情包；\n        后端改为 Tauri 2 + Rust 单进程，没有 OneBot、没有本地 HTTP 服务、没有 Python 后端。\n\n        聊天记录、长期记忆和配置只保存在本机。\n        项目以 AGPL-3.0 发布。非官方项目，原版角色与美术资源版权归原作者及相应权利人所有。\n\n        仓库：https://github.com/zgyhim/Starlit_FOSS";
+    app.dialog()
+        .message(text)
+        .title("关于星伴 FOSS")
+        .show(|_| {});
 }
 
 #[tauri::command]

@@ -12599,9 +12599,7 @@
   });
 
   if (els.settingsAboutRepo) {
-    els.settingsAboutRepo.addEventListener('click', () => {
-      api.openRepo().catch(() => toast('打开仓库失败'));
-    });
+    els.settingsAboutRepo.addEventListener('click', () => api.showAbout());
   }
 
   if (els.settingsDevtools) {
