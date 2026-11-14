@@ -1579,8 +1579,8 @@
   function onlineChatSubtitle() {
     const mood = state.bot ? moodOf(state.bot.id) : null;
     const line = mood && mood.line ? mood.line : '';
-    if (immersionEnabled()) return line || '此刻，陪你慢慢聊';
-    return '在线 · 本地直连' + (line ? ' · ' + line : '');
+    if (immersionEnabled()) return line;
+    return line || '在线';
   }
 
   function hasReplyProcessing(key) {
