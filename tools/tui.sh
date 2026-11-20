@@ -41,8 +41,9 @@ def cell(ch):
 out = ""
 used = 0
 for ch in text:
-    if used + cell(ch) > width:
+    if used + cell(ch) > width - 1:
         out += "…"
+        used += 1
         break
     out += ch
     used += cell(ch)

@@ -44,7 +44,7 @@ function Format-BoxText([string]$text) {
   $used = 0
   foreach ($ch in $text.ToCharArray()) {
     $w = if ((Get-DisplayWidth $ch) -eq 2) { 2 } else { 1 }
-    if ($used + $w -gt $BoxInner) { $out += '…'; break }
+    if ($used + $w -gt ($BoxInner - 1)) { $out += '…'; $used += 1; break }
     $out += $ch
     $used += $w
   }
