@@ -168,14 +168,14 @@ PY
 main_menu() {
   while true; do
     clear 2>/dev/null || true
-    printf '%s\n' "${C_BOLD}${C_CYAN}星伴 FOSS · TUI 工具${C_RESET}"
-    printf '%s\n' "应用目录：$APP_ROOT"
-    printf '%s\n' "数据目录：$DATA_ROOT"
-    printf '%s\n' "----------------------------------------"
-    printf '%s\n' "1) 导出日志文件夹"
-    printf '%s\n' "2) 安装 WebView2（Windows）"
-    printf '%s\n' "3) 检查文件完整性"
-    printf '%s\n' "0) 退出"
+    printf '%s\n' "${C_BOLD}${C_CYAN}星伴 FOSS TUI 工具${C_RESET}"
+    printf '应用目录:\t%s\n' "$APP_ROOT"
+    printf '数据目录:\t%s\n' "$DATA_ROOT"
+    printf '\n'
+    printf '1\t导出日志文件夹\n'
+    printf '2\t安装 WebView2（Windows）\n'
+    printf '3\t检查文件完整性\n'
+    printf '0\t退出\n'
     read -r -p "请选择： " choice || exit 0
     case "$choice" in
       1) export_logs ;;

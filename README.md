@@ -1,4 +1,4 @@
-# 星伴 Starlit · FOSS
+# 星伴 Starlit FOSS
 
 **一个本地运行、专注聊天的 AI 伙伴。**
 

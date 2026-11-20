@@ -137,14 +137,14 @@ function Check-Integrity {
 function Show-Menu {
   while ($true) {
     Clear-Host
-    Write-Host '星伴 FOSS · TUI 工具' -ForegroundColor Cyan
-    Write-Host "应用目录：$AppRoot"
-    Write-Host "数据目录：$DataRoot"
-    Write-Host '----------------------------------------'
-    Write-Host '1) 导出日志文件夹'
-    Write-Host '2) 安装 WebView2'
-    Write-Host '3) 检查文件完整性'
-    Write-Host '0) 退出'
+    Write-Host '星伴 FOSS TUI 工具' -ForegroundColor Cyan
+    Write-Host "应用目录:`t$AppRoot"
+    Write-Host "数据目录:`t$DataRoot"
+    Write-Host ''
+    Write-Host "1`t导出日志文件夹"
+    Write-Host "2`t安装 WebView2"
+    Write-Host "3`t检查文件完整性"
+    Write-Host "0`t退出"
     $choice = Read-Host '请选择'
     switch ($choice) {
       '1' { Export-Logs }
