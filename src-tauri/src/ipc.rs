@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::Serialize;
 use tauri::{Emitter, State};
 
@@ -12,6 +13,7 @@ pub struct AppInfo {
     pub config_path: String,
     pub db_path: String,
     pub started_at: i64,
+    pub release: bool,
 }
 
 #[tauri::command]
@@ -23,6 +25,7 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         config_path: state.paths.config_file().display().to_string(),
         db_path: state.paths.db_file().display().to_string(),
         started_at: state.started_at,
+        release: !cfg!(debug_assertions),
     }
 }
 
@@ -84,6 +87,57 @@ pub fn toggle_devtools(window: tauri::WebviewWindow) -> Result<bool, String> {
         let _ = window;
         Err("当前构建未启用开发者工具".into())
     }
+}
+
+
+#[tauri::command]
+pub fn export_logs(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let dir = state.paths.log_dir();
+    let mut tar_bytes = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_bytes);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("log") {
+                    continue;
+                }
+                let name = path.file_name().and_then(|v| v.to_str()).unwrap_or("log");
+                builder
+                    .append_path_with_name(&path, format!("log/{name}"))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        builder.finish().map_err(|e| e.to_string())?;
+    }
+    let compressed = zstd::stream::encode_all(&tar_bytes[..], 19).map_err(|e| e.to_string())?;
+    let filename = format!(
+        "starlit-logs-{}.tar.zst",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    Ok(serde_json::json!({
+        "filename": filename,
+        "size": compressed.len(),
+        "data": BASE64.encode(compressed),
+    }))
+}
+
+#[tauri::command]
+pub fn clear_logs(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let dir = state.paths.log_dir();
+    let mut removed = 0u64;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("log")
+                && std::fs::remove_file(&path).is_ok()
+            {
+                removed += 1;
+            }
+        }
+    }
+    crate::logging::info("logs", &format!("cleared {removed} log file(s)"));
+    Ok(serde_json::json!({ "removed": removed }))
 }
 
 #[tauri::command]

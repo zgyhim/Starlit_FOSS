@@ -46,6 +46,8 @@
     diagnosticsTest: (target) => invoke("diagnostics_test", { target }),
     toggleDevtools: () => invoke("toggle_devtools"),
     showAbout: () => invoke("show_about"),
+    exportLogs: () => invoke("export_logs"),
+    clearLogs: () => invoke("clear_logs"),
     getSettings: () => invoke("get_settings"),
     saveSettings: (payload) => invoke("save_settings", { payload }),
     createBackup: () => invoke("create_backup"),

@@ -106,7 +106,7 @@ pub fn run() {
                 }
             };
 
-            logging::init(&paths.log_file())?;
+            logging::init(&paths.log_dir())?;
             logging::info("app", &format!("data root: {}", paths.root.display()));
             logging::set_emitter(app.handle().clone());
             paths.seed()?;
@@ -147,6 +147,8 @@ pub fn run() {
             ipc::window_control,
             ipc::window_state,
             ipc::open_data_dir,
+            ipc::export_logs,
+            ipc::clear_logs,
             ipc::read_log_tail,
             ipc::log_message,
             ipc::toggle_devtools,

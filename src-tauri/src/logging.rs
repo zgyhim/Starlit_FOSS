@@ -38,7 +38,7 @@ impl Level {
     }
 }
 
-static LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
+static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 static EMITTER: OnceLock<tauri::AppHandle> = OnceLock::new();
 static MIN_LEVEL: AtomicU8 = AtomicU8::new(Level::Info as u8);
 static NEXT_TID: AtomicU64 = AtomicU64::new(1);
@@ -46,7 +46,6 @@ static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 const TAG_COLOR: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
-const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
 
 thread_local! {
     static TID: u64 = NEXT_TID.fetch_add(1, Ordering::Relaxed);
@@ -66,13 +65,10 @@ fn force_exit(app: Option<tauri::AppHandle>) -> ! {
 }
 
 /// 初始化日志文件、级别与 panic hook。可重复调用，只生效一次。
-pub fn init(log_file: &Path) -> Result<(), String> {
-    if let Some(parent) = log_file.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    rotate_if_needed(log_file);
+pub fn init(log_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(log_dir).map_err(|e| e.to_string())?;
 
-    if LOG_FILE.set(log_file.to_path_buf()).is_ok() {
+    if LOG_DIR.set(log_dir.to_path_buf()).is_ok() {
         if let Ok(value) = std::env::var("STARLIT_LOG_LEVEL") {
             let level = match value.to_ascii_lowercase().as_str() {
                 "error" | "e" => Level::Error,
@@ -101,10 +97,10 @@ pub fn init(log_file: &Path) -> Result<(), String> {
             let mut dialog_message = String::new();
             if let Some(app) = EMITTER.get() {
                 use tauri_plugin_dialog::DialogExt;
-                let log_path = LOG_FILE
+                let log_path = LOG_DIR
                     .get()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| "desktop.log".into());
+                    .map(|dir| dir.join(format!("{}.log", chrono::Local::now().format("%Y-%m-%d"))).display().to_string())
+                    .unwrap_or_else(|| "log/YYYY-MM-DD.log".into());
                 let detail = if detail.chars().count() > 800 {
                     format!("{}…", detail.chars().take(800).collect::<String>())
                 } else {
@@ -163,16 +159,6 @@ pub fn init(log_file: &Path) -> Result<(), String> {
         );
     }
     Ok(())
-}
-
-fn rotate_if_needed(path: &Path) {
-    if let Ok(meta) = fs::metadata(path) {
-        if meta.len() > MAX_LOG_BYTES {
-            let backup = path.with_extension("log.1");
-            let _ = fs::remove_file(&backup);
-            let _ = fs::rename(path, backup);
-        }
-    }
 }
 
 /// 把 ERROR 级别日志同时推给前端。
@@ -247,11 +233,12 @@ pub fn log(level: Level, tag: &str, message: &str) {
         }
     }
 
-    let Some(path) = LOG_FILE.get() else {
+    let Some(dir) = LOG_DIR.get() else {
         return;
     };
+    let path = dir.join(format!("{}.log", now.format("%Y-%m-%d")));
     let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(
             file,
             "{timestamp} {pid:>6} {tid:>5} {}/StarLit({tag}): {message}",

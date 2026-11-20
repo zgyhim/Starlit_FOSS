@@ -1530,6 +1530,15 @@
           <span class="switch"><input type="checkbox" id="settingsAutoClearCache" aria-label="退出时自动删除解压缓存"><i></i></span>
         </label>
       </section>
+      <section class="update-settings hidden" id="settingsLogSection" aria-label="运行日志">
+        <div class="setting-row">
+          <div><strong>运行日志</strong><span id="settingsLogState">按日期保存在数据目录的 log/ 下</span></div>
+          <div class="setting-inline">
+            <button class="ghost" id="settingsExportLogs" type="button">导出日志</button>
+            <button class="ghost" id="settingsClearLogs" type="button">清除日志</button>
+          </div>
+        </div>
+      </section>
       <section class="update-settings hidden" id="settingsUpdateRow" aria-label="软件更新">
         <div class="setting-row">
           <div><strong>软件更新</strong><span id="settingsUpdateState">仅检查公开版本信息，不会上传聊天或个人配置</span></div>

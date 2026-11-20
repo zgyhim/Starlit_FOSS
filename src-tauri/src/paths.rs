@@ -41,8 +41,13 @@ impl Paths {
         self.data.join("companion.db")
     }
 
+    pub fn log_dir(&self) -> PathBuf {
+        self.root.join("log")
+    }
+
     pub fn log_file(&self) -> PathBuf {
-        self.data.join("desktop.log")
+        self.log_dir()
+            .join(format!("{}.log", chrono::Local::now().format("%Y-%m-%d")))
     }
 
     pub fn template_dir(&self) -> PathBuf {
@@ -92,6 +97,7 @@ impl Paths {
             &self.backups.join("lan-sync"),
             &self.backups.join("updates"),
             &self.run,
+            &self.log_dir(),
             &self.data.join("stickers"),
             &self.data.join("sticker_thumbs"),
             &self.data.join("avatars"),

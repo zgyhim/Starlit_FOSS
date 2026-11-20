@@ -205,6 +205,9 @@
     settingsDevtools: $('#settingsDevtools'),
     settingsAboutVersion: $('#settingsAboutVersion'),
     settingsAboutRepo: $('#settingsAboutRepo'),
+    settingsLogSection: $('#settingsLogSection'),
+    settingsExportLogs: $('#settingsExportLogs'),
+    settingsClearLogs: $('#settingsClearLogs'),
     settingsRestoreInput: $('#settingsRestoreInput'),
     settingsCacheState: $('#settingsCacheState'),
     settingsClearCache: $('#settingsClearCache'),
@@ -9163,12 +9166,15 @@
     loadServiceSettings();
     loadDiagnostics();
     loadMediaCacheInfo();
-    if (els.settingsAboutVersion) {
-      api.appInfo().then((info) => {
+    api.appInfo().then((info) => {
+      if (els.settingsAboutVersion) {
         els.settingsAboutVersion.textContent =
           `v${info.version} · AGPL-3.0 · 本地优先`;
-      }).catch(() => {});
-    }
+      }
+      if (info.release && els.settingsLogSection) {
+        els.settingsLogSection.classList.remove('hidden');
+      }
+    }).catch(() => {});
   }
 
   function setSettingsNotice(message = '', kind = 'error') {
@@ -12182,6 +12188,33 @@
   document.addEventListener('contextmenu', (event) => {
     if (!event.defaultPrevented) event.preventDefault();
   });
+
+  if (els.settingsExportLogs) {
+    els.settingsExportLogs.addEventListener('click', async () => {
+      try {
+        const out = await api.exportLogs();
+        const binary = atob(out.data || '');
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'application/zstd' });
+        await downloadBlob(blob, out.filename || 'starlit-logs.tar.zst');
+        toast('日志已导出');
+      } catch (e) {
+        toast('导出日志失败：' + (e?.message || e));
+      }
+    });
+  }
+  if (els.settingsClearLogs) {
+    els.settingsClearLogs.addEventListener('click', async () => {
+      if (!confirm('删除全部本地日志？此操作不可恢复。')) return;
+      try {
+        const out = await api.clearLogs();
+        toast(`已清除 ${out.removed || 0} 个日志文件`);
+      } catch (e) {
+        toast('清除日志失败：' + (e?.message || e));
+      }
+    });
+  }
 
   if (els.settingsAboutRepo) {
     els.settingsAboutRepo.addEventListener('click', () => api.showAbout());
