@@ -177,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 
 菜单提供：
 
-1. **导出日志文件夹** — Linux 导出 `.tar.zst`，Windows 导出 `.zip`
+1. **导出日志文件夹** — Linux/macOS 导出 `.tar.zst`（有 zstd 时），Windows 导出 `.zip`
 2. **安装 WebView2** — Windows 检测并静默安装 Evergreen Runtime；Linux 提示不需要
 3. **检查文件完整性** — 校验可执行文件、媒体包 SHA-256、数据库 `integrity_check`、日志目录
 
@@ -192,6 +192,13 @@ powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 .\tools\tui.ps1 -Action export
 .\tools\tui.ps1 -Action check
 ```
+
+`tui.ps1` 也支持 PowerShell 7+（`pwsh`）在 Linux / macOS 上运行：
+
+- 数据目录默认按平台解析：Linux `~/.local/share/starlit-desktop`，macOS `~/Library/Application Support/starlit-desktop`，Windows `%APPDATA%\starlit-desktop`
+- 导出日志优先用 `tar` + `zstd` 生成 `.tar.zst`，没有 zstd 时退回 `.zip`
+- 安装 WebView2 会直接提示当前平台不需要
+- 完整性检查会额外查找 `src-tauri/target/{release,debug}/starlit-foss`
 
 可用 `STARLIT_APP_ROOT` / `STARLIT_DATA_ROOT` 覆盖应用目录与数据目录。
 

@@ -1,4 +1,4 @@
-# 星伴 FOSS TUI 工具（Windows PowerShell 5.1+）
+# 星伴 FOSS TUI 工具（Windows PowerShell 5.1+ / PowerShell 7+ on Linux & macOS）
 [CmdletBinding()]
 param(
   [ValidateSet('menu','export','webview2','check')]
@@ -6,18 +6,31 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Windows PowerShell 5.1 没有 $IsWindows，需要手动判定
+$IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+$IsMac = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsMacOS } else { $false }
+
 $ScriptDir = $PSScriptRoot
 $AppRoot = if ($env:STARLIT_APP_ROOT) { $env:STARLIT_APP_ROOT } else { Split-Path $ScriptDir -Parent }
-$DataRoot = if ($env:STARLIT_DATA_ROOT) { $env:STARLIT_DATA_ROOT } else { Join-Path $env:APPDATA 'starlit-desktop' }
+
+$defaultData = if ($IsWin) {
+  Join-Path $env:APPDATA 'starlit-desktop'
+} elseif ($IsMac) {
+  Join-Path $HOME 'Library/Application Support/starlit-desktop'
+} else {
+  Join-Path $HOME '.local/share/starlit-desktop'
+}
+$DataRoot = if ($env:STARLIT_DATA_ROOT) { $env:STARLIT_DATA_ROOT } else { $defaultData }
+
 $LogDir = Join-Path $DataRoot 'log'
-$MediaDir = Join-Path $AppRoot 'resources\media'
+$MediaDir = Join-Path (Join-Path $AppRoot 'resources') 'media'
+$TempDir = [System.IO.Path]::GetTempPath()
+$StarlitExe = if ($IsWin) { 'starlit-foss.exe' } else { 'starlit-foss' }
 $WebView2Guid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 $WebView2Url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
-function Write-Ok($text)   { Write-Host "[OK] $text" -ForegroundColor Green }
 function Write-Warn($text) { Write-Host "[WARN] $text" -ForegroundColor Yellow }
-function Write-Err($text)  { Write-Host "[FAIL] $text" -ForegroundColor Red }
-function Write-Title($text){ Write-Host "`n$text" -ForegroundColor Cyan }
 $BoxInner = 66
 
 function Get-DisplayWidth([string]$text) {
@@ -91,16 +104,34 @@ function Export-Logs {
   New-Item -ItemType Directory -Force -Path $out | Out-Null
 
   $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-  $target = Join-Path $out "starlit-logs-$stamp.zip"
-  $files = Get-ChildItem -Path $LogDir -Filter '*.log' -File
-  if ($files.Count -eq 0) {
-    $tmp = Join-Path $env:TEMP "starlit-empty-$stamp"
-    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-    Set-Content -Path (Join-Path $tmp 'empty.txt') -Value 'no logs'
-    Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $target -Force
-    Remove-Item -Recurse -Force $tmp
+  $files = @(Get-ChildItem -Path $LogDir -Filter '*.log' -File)
+
+  $zstd = Get-Command zstd -ErrorAction SilentlyContinue
+  $tar = Get-Command tar -ErrorAction SilentlyContinue
+  $useTarZst = (-not $IsWin) -and $zstd -and $tar
+
+  if ($useTarZst) {
+    $target = Join-Path $out "starlit-logs-$stamp.tar.zst"
+    if ($files.Count -eq 0) {
+      $tmp = Join-Path $TempDir "starlit-empty-$stamp"
+      New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+      Set-Content -Path (Join-Path $tmp 'empty.txt') -Value 'no logs'
+      & tar -C $tmp -cf - . | & zstd -19 -T0 -q -f -o $target
+      Remove-Item -Recurse -Force $tmp
+    } else {
+      & tar -C $LogDir -cf - . | & zstd -19 -T0 -q -f -o $target
+    }
   } else {
-    Compress-Archive -Path $files.FullName -DestinationPath $target -Force
+    $target = Join-Path $out "starlit-logs-$stamp.zip"
+    if ($files.Count -eq 0) {
+      $tmp = Join-Path $TempDir "starlit-empty-$stamp"
+      New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+      Set-Content -Path (Join-Path $tmp 'empty.txt') -Value 'no logs'
+      Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $target -Force
+      Remove-Item -Recurse -Force $tmp
+    } else {
+      Compress-Archive -Path $files.FullName -DestinationPath $target -Force
+    }
   }
 
   $size = '{0:N1} KB' -f ((Get-Item $target).Length / 1KB)
@@ -113,6 +144,16 @@ function Export-Logs {
 }
 
 function Install-WebView2 {
+  if (-not $IsWin) {
+    Write-BoxTop '安装 WebView2'
+    Write-BoxLine '当前平台不是 Windows'
+    Write-BoxLine 'Linux/macOS 使用 WebKitGTK/WKWebView'
+    Write-BoxLine '无需安装 WebView2'
+    Write-BoxBottom
+    Pause-Menu
+    return
+  }
+
   $paths = @(
     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$WebView2Guid",
     "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$WebView2Guid"
@@ -138,7 +179,7 @@ function Install-WebView2 {
   Write-BoxLine '准备下载官方 Evergreen 安装器'
   Write-BoxBottom
 
-  $installer = Join-Path $env:TEMP 'MicrosoftEdgeWebview2Setup.exe'
+  $installer = Join-Path $TempDir 'MicrosoftEdgeWebview2Setup.exe'
   try {
     Invoke-WebRequest -Uri $WebView2Url -OutFile $installer -UseBasicParsing
     Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -Wait
@@ -160,10 +201,16 @@ function Check-Integrity {
   $failures = 0
 
   $exeCandidates = @(
-    (Join-Path $AppRoot 'bin\starlit-foss.exe'),
-    (Join-Path $AppRoot 'starlit-foss.exe'),
-    (Join-Path $env:ProgramFiles '星伴 FOSS\starlit-foss.exe')
+    (Join-Path (Join-Path $AppRoot 'bin') $StarlitExe),
+    (Join-Path $AppRoot $StarlitExe)
   )
+  if ($IsWin -and $env:ProgramFiles) {
+    $exeCandidates += (Join-Path (Join-Path (Join-Path $env:ProgramFiles '星伴 FOSS') $StarlitExe))
+  }
+  if (-not $IsWin) {
+    $exeCandidates += (Join-Path $AppRoot 'src-tauri/target/release/starlit-foss')
+    $exeCandidates += (Join-Path $AppRoot 'src-tauri/target/debug/starlit-foss')
+  }
   $exe = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($exe) { $results.Add("[OK] 可执行文件: $exe") }
   else { $results.Add('[FAIL] 未找到应用可执行文件'); $failures++ }
@@ -185,7 +232,7 @@ function Check-Integrity {
     else { $results.Add("[FAIL] 媒体包异常: 缺失 $missing, 校验失败 $bad, 共 $total"); $failures++ }
   }
 
-  $db = Join-Path $DataRoot 'data\companion.db'
+  $db = Join-Path (Join-Path $DataRoot 'data') 'companion.db'
   if (Test-Path $db) {
     $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
     if ($sqlite) {
