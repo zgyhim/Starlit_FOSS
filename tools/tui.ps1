@@ -225,8 +225,14 @@ function Check-Integrity {
       $total++
       $file = Join-Path $MediaDir $entry.name
       if (-not (Test-Path $file)) { $missing++; continue }
-      $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
-      if ($hash -ne $entry.sha256.ToLower()) { $bad++ }
+      if ($entry.md5) {
+        $hash = (Get-FileHash $file -Algorithm MD5).Hash.ToLower()
+        $expected = $entry.md5.ToLower()
+      } else {
+        $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+        $expected = $entry.sha256.ToLower()
+      }
+      if ($hash -ne $expected) { $bad++ }
     }
     if ($missing -eq 0 -and $bad -eq 0) { $results.Add("[OK] 媒体包完整: $total 个") }
     else { $results.Add("[FAIL] 媒体包异常: 缺失 $missing, 校验失败 $bad, 共 $total"); $failures++ }

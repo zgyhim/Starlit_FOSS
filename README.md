@@ -179,7 +179,7 @@ powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 
 1. **导出日志文件夹** — Linux/macOS 导出 `.tar.zst`（有 zstd 时），Windows 导出 `.zip`
 2. **安装 WebView2** — Windows 检测并静默安装 Evergreen Runtime；Linux 提示不需要
-3. **检查文件完整性** — 校验可执行文件、媒体包 SHA-256、数据库 `integrity_check`、日志目录
+3. **检查文件完整性** — 校验可执行文件、媒体包 MD5、数据库 `integrity_check`、日志目录
 
 也支持非交互调用：
 

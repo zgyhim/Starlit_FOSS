@@ -9,7 +9,8 @@
       "bytes": 859089,
       "content": "avatars,character_avatars",
       "uncompressed": 1625918,
-      "files": 19
+      "files": 19,
+      "md5": "8c2e37756569002b5ddf8a1a7c093f71"
     },
     {
       "name": "groups.tar.zst",
@@ -19,7 +20,8 @@
       "bytes": 3048,
       "content": "groups",
       "uncompressed": 151552,
-      "files": 1
+      "files": 1,
+      "md5": "74273050abb9774cc29ab5b9c9f72491"
     },
     {
       "name": "stickers-mygo.tar.zst",
@@ -29,7 +31,8 @@
       "bytes": 136177756,
       "content": "mygo",
       "uncompressed": 141227120,
-      "files": 179
+      "files": 179,
+      "md5": "03782a124c88eb871f3dcf9ad52c251d"
     },
     {
       "name": "stickers-blue-archive.tar.zst",
@@ -39,7 +42,8 @@
       "bytes": 227513514,
       "content": "blue archive",
       "uncompressed": 232544106,
-      "files": 217
+      "files": 217,
+      "md5": "f2cfe25f7d3d9dc6b66be40de81313a4"
     },
     {
       "name": "stickers-kaguya.tar.zst",
@@ -49,7 +53,8 @@
       "bytes": 419121925,
       "content": "超时空辉夜姬表情包",
       "uncompressed": 422638204,
-      "files": 281
+      "files": 281,
+      "md5": "581ed26b1e086c168a0547b380fd9849"
     },
     {
       "name": "stickers-stolen.tar.zst",
@@ -59,7 +64,8 @@
       "bytes": 11486295,
       "content": "stolen",
       "uncompressed": 11583414,
-      "files": 16
+      "files": 16,
+      "md5": "ef75a9e9655018bd3925dfa19713c4de"
     }
   ],
   "base_url": "https://github.com/zgyhim/Starlit_FOSS/releases/download/media-v1/"

@@ -169,11 +169,13 @@ for entry in data.get("archives", []):
     if not os.path.isfile(path):
         missing += 1
         continue
-    h = hashlib.sha256()
+    expected = entry.get("md5") or entry.get("sha256")
+    algo = "md5" if entry.get("md5") else "sha256"
+    h = hashlib.new(algo)
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
-    if h.hexdigest() != entry.get("sha256"):
+    if h.hexdigest() != expected:
         bad += 1
 if missing == 0 and bad == 0:
     print(f"[OK] 媒体包完整: {total} 个")
