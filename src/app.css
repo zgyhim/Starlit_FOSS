@@ -5887,3 +5887,29 @@ html[data-font-size="xlarge"] { --msg-font-size: 18px; }
   font-size: 11px;
 }
 .mention-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 文字选择范围：界面框架不可选，聊天气泡/输入/日志等正文可选 */
+html,
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+select,
+[contenteditable="true"],
+.bubble,
+.bubble *,
+.system-tip,
+.recalled-tip,
+.memory-text-content,
+.persona-editor,
+.persona-version-card,
+.about-foss-modal .modal-body,
+#errorLogLayer,
+#errorLogLayer *,
+pre,
+code {
+  -webkit-user-select: text;
+  user-select: text;
+}
