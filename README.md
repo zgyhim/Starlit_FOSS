@@ -163,6 +163,38 @@ Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebV
 
 ---
 
+## TUI 工具
+
+仓库自带两个命令行工具，功能一致：
+
+```bash
+# Linux / macOS
+./tools/tui.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File tools\tui.ps1
+```
+
+菜单提供：
+
+1. **导出日志文件夹** — Linux 导出 `.tar.zst`，Windows 导出 `.zip`
+2. **安装 WebView2** — Windows 检测并静默安装 Evergreen Runtime；Linux 提示不需要
+3. **检查文件完整性** — 校验可执行文件、媒体包 SHA-256、数据库 `integrity_check`、日志目录
+
+也支持非交互调用：
+
+```bash
+./tools/tui.sh --export
+./tools/tui.sh --check
+```
+
+```powershell
+.\tools\tui.ps1 -Action export
+.\tools\tui.ps1 -Action check
+```
+
+可用 `STARLIT_APP_ROOT` / `STARLIT_DATA_ROOT` 覆盖应用目录与数据目录。
+
 ## 你的数据在哪
 
 - Linux：`~/.local/share/starlit-desktop`
