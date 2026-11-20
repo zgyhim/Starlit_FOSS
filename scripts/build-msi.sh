@@ -13,7 +13,7 @@ need() { command -v "$1" >/dev/null || { echo "缺少命令：$1" >&2; exit 1; }
 need wixl
 need python3
 
-[ -f "$EXE" ] || { echo "找不到 $EXE，请先运行 scripts/build-windows.sh" >&2; exit 1; }
+[ -f "$EXE" ] || { echo "找不到 $EXE，请先运行 make windows" >&2; exit 1; }
 
 VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version" 2>/dev/null || echo 0.1.0)"
 mkdir -p dist

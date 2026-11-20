@@ -1,122 +1,124 @@
-# 星伴 Starlit FOSS
+# Starlit FOSS
 
-**一个本地运行、专注聊天的 AI 伙伴。**
+**A local-first AI companion built for conversation.**
 
-星伴 FOSS 是对「星伴」桌面应用的独立重实现。它基于原版**逆向分析得到的前端源码**，保留了你熟悉的界面、角色、人格和表情包，但把底层那套复杂的 Electron + Python + OneBot 架构整个换掉了。
+English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-没有 QQ 协议，没有本地 HTTP/WebSocket 服务，没有令牌，没有后台 Python 进程。打开就是聊天。
+Starlit FOSS is an independent reimplementation of the Starlit desktop app. It keeps the interface, characters, personas and sticker packs you already know, taken from the **frontend source recovered by reverse engineering**, while replacing the whole Electron + Python + OneBot stack underneath.
 
-> 非官方项目，与原作者无关。原版角色、人格与美术资源版权归原作者及相应权利人所有。
+No QQ protocol, no local HTTP/WebSocket server, no access tokens, no background Python process. Open it and talk.
 
----
-
-## 为什么要重写
-
-原版星伴其实是一个「用 QQ 机器人协议驱动聊天界面」的应用：Electron 外壳负责启动 Python 后端，后端再跑 OneBot 服务端，前端通过 WebSocket 收发消息。
-
-这套架构能工作，但对一个**单机陪伴应用**来说太重了：
-
-- 要维护 Python 运行时和打包产物
-- 要开本地端口，还要处理访问令牌
-- 消息要先转成 OneBot 的协议格式，再转回来
-- 任何一环出问题，聊天就打不开
-
-星伴 FOSS 把这些全部去掉：
-
-| 原版 | 现在 |
-|---|---|
-| Electron + Python 双进程 | Tauri 2 单进程 |
-| OneBot 11 服务端 / WebSocket | 直接调用 Rust 命令 |
-| 本地 HTTP `/api/*` + 访问令牌 | 无端口、无令牌 |
-| 消息段 / CQ 码 / 事件推送 | 中性的消息结构 |
-| 需要等后端健康检查 | 打开即用 |
-
-### 换来了什么
-
-- **更纯净的聊天**：没有协议层，消息直接进数据库、直接上屏
-- **更轻**：不需要 Python，不需要多开一个后端
-- **更稳**：少了进程间通信和端口占用，退出不会残留后台
-- **更安全**：不监听任何端口，局域网里扫不到
-- **更好维护**：前端沿用原版，后端是清晰的 Rust 模块
-- **仍然保留原味**：原版界面、10 位角色、人格设定、表情包、头像
+> Unofficial project, not affiliated with the original author. Characters, personas and artwork remain the property of their respective rights holders.
 
 ---
 
-## 她是什么样的伙伴
+## Why rewrite it
 
-- **一对一私聊**：文字、表情包、引用、撤回、转发
-- **有自己的人设**：每位角色有独立的说话方式、性格和边界
-- **会记住你**：偏好、约定和发生过的事会被记下来，之后自然提起
-- **会主动找你**：上线问候、想念、分享心情、回顾聊过的事
-- **有自己的节奏**：不会秒回轰炸，也不会在你忙时打扰，深夜会安静下来；回复速度可调（瞬间 / 快 / 标准 / 慢）
-- **会接着聊**：连发几条会合并成一次回应；你不回时她会过一会儿轻轻补一句
-- **本地面貌**：原版头像、表情包合集、聊天气泡和背景
+The original app drives a chat UI through a QQ bot protocol: an Electron shell starts a Python backend, the backend runs an OneBot server, and the frontend exchanges messages over WebSocket.
 
-## 现在能做什么
+That works, but for a **single-machine companion app** it is far too heavy:
 
-| 能力 | 状态 |
+- a Python runtime has to be shipped and maintained
+- a local port and an access token are required
+- every message is converted to OneBot format and back
+- if any link in the chain fails, chat does not start
+
+Starlit FOSS removes all of it:
+
+| Original | Now |
 |---|---|
-| 私聊对话与模型回复 | ✅ 支持回复速度调节 |
-| 长期记忆（抽取、纠正、置顶、召回） | ✅ |
-| 主动陪伴（问候、想念、心情、摘要） | ✅ |
-| 角色头像与表情包 | ✅ |
-| 聊天历史、引用、撤回、转发 | ✅ |
-| 多角色切换 | ✅ |
-| 群聊 | ✅ 基础（接话、@ 补全、管理、群文件、ambient） |
-| 好感 / 羁绊 | ✅ 基础（每日成长、绑定） |
-| 表情包自动搭配 | ✅ |
-| 备份 | ✅ 导出 / 恢复（重启生效） |
-| 共同生活 | ✅ 约定到期跟进、纪念日、日记 |
-| 搜索 / 诊断 | ✅ |
-| 角色卡导入、资料编辑 | ✅ 基础（支持试聊与 AI 生成人设） |
+| Electron + Python, two processes | Tauri 2, one process |
+| OneBot 11 server / WebSocket | Direct Rust commands |
+| Local HTTP `/api/*` + token | No port, no token |
+| Message segments / CQ codes / event push | Neutral message model |
+| Waits for backend health check | Usable immediately |
 
-### 被移除 / 明确不实现的功能
+### What you get
 
-星伴 FOSS 不是原版的完整复制。以下能力被移除或明确不做，界面入口也已删除：
+- **Cleaner chat**: no protocol layer, messages go straight to the database and the screen
+- **Lighter**: no Python, no second backend
+- **Sturdier**: no IPC or port contention, no leftover processes after exit
+- **Safer**: listens on nothing, invisible to LAN scans
+- **More maintainable**: original frontend, clear Rust modules
+- **Still familiar**: original UI, 10 characters, persona settings, stickers, avatars
 
-| 功能 | 处理 | 原因 |
+---
+
+## What kind of companion she is
+
+- **One-on-one chat**: text, stickers, quotes, recall, forwarding
+- **Has a persona**: each character has her own voice, temperament and boundaries
+- **Remembers you**: preferences, promises and past events are stored and recalled naturally
+- **Reaches out first**: greetings, missing you, sharing moods, revisiting old topics
+- **Has her own rhythm**: no instant bombardment, no interruptions when you are busy, quiet at night; reply speed is adjustable (instant / fast / normal / slow)
+- **Keeps the thread**: several messages in a row get one combined reply; if you go silent she adds a gentle follow-up later
+- **Local look**: original avatars, sticker collections, chat bubbles and backgrounds
+
+## Features
+
+| Capability | Status |
+|---|---|
+| Direct chat with model replies | ✅ adjustable reply speed |
+| Long-term memory (extract, correct, pin, recall) | ✅ |
+| Proactive companionship (greeting, missing, mood, summary) | ✅ |
+| Character avatars and stickers | ✅ |
+| History, quotes, recall, forwarding | ✅ |
+| Multiple characters | ✅ |
+| Group chat | ✅ basic (interjections, @ completion, admin, ambient) |
+| Bond / affinity | ✅ basic (daily growth, binding) |
+| Automatic sticker matching | ✅ |
+| Backup | ✅ export / restore (restart required) |
+| Shared life | ✅ deadline follow-up, anniversaries, diary |
+| Search / diagnostics | ✅ |
+| Character card import, profile editing | ✅ basic (trial chat and AI persona generation) |
+
+### Removed / explicitly not implemented
+
+Starlit FOSS is not a complete clone. The following are removed, including their UI entries:
+
+| Feature | Disposition | Reason |
 |---|---|---|
-| 语音合成 / 朗读（TTS） | 移除 | 摆脱对 OpenAI 兼容语音接口的依赖，坚持开源标准与供应商中立 |
-| 手机与电脑局域网同步 | 移除 | 协议、鉴权、备份恢复链路过于复杂，且会带来额外的安全暴露面 |
-| 录音发送（语音输入） | 移除 | 麦克风权限在各平台不一致；语音识别会重新引入对特定供应商的依赖 |
-| 群文件 | 移除 | 实现复杂；文件内容会让模型的多模态输入变得混杂，偏离纯聊天定位 |
-| Stapxs 经典客户端入口 | 移除 | 依赖 OneBot 与本地服务，与纯本地 IPC 架构冲突 |
-| OneBot / QQ 协议、本地 HTTP/WS、访问令牌 | 移除 | 单机陪伴应用不需要协议层；去掉后故障面更小、也不监听端口 |
-| 表情包缩略图 | 移除 | 始终显示原图，避免缩略图与原图不一致 |
-| Windows 7 / 8 / 8.1 | 不支持 | WebView2 与 Tauri 2 要求 Windows 10 及以上，启动时会给出兼容性警告 |
+| Text-to-speech / reading aloud | Removed | Drops the dependency on OpenAI-compatible voice APIs; keeps the project vendor-neutral |
+| LAN sync between phone and desktop | Removed | Protocol, auth and backup chains were too complex and added attack surface |
+| Voice message recording | Removed | Microphone permissions differ per platform; speech recognition reintroduces vendor lock-in |
+| Group files | Removed | Complex, and file content muddles multimodal model input away from pure chat |
+| Stapxs classic client entry | Removed | Depends on OneBot and a local service, conflicts with local IPC |
+| OneBot / QQ protocol, local HTTP/WS, tokens | Removed | A single-machine app needs no protocol layer; fewer failures, no open ports |
+| Sticker thumbnails | Removed | Always show the original, avoiding mismatch with thumbnails |
+| Windows 7 / 8 / 8.1 | Unsupported | WebView2 and Tauri 2 require Windows 10+; a compatibility warning is shown at startup |
 
-这些取舍的原则是：**宁可少一个功能，也不把供应商依赖、复杂协议或安全风险带回来。**
+The rule behind these trade-offs: **rather lose a feature than bring back a vendor dependency, a complex protocol or extra risk.**
 
 ---
 
-## 支持平台
+## Platforms
 
-| 平台 | 状态 |
+| Platform | Status |
 |---|---|
-| Linux x86_64 | ✅ 当前开发与验证平台 |
-| Windows x86_64 | ✅ 支持 |
-| Android 10+ | 🚧 计划中 |
-| FreeBSD x86_64 | 🚧 计划中 |
+| Linux x86_64 | ✅ development and verification platform |
+| Windows x86_64 | ✅ supported |
+| Android 10+ | 🚧 planned |
+| FreeBSD x86_64 | 🚧 planned |
 
 ---
 
-## 开始使用
+## Getting started
 
-### 直接运行
+### Run a build
 
-从 Releases 下载对应平台的安装包，打开即可。
+Download the package for your platform from Releases and open it.
 
-首次启动会准备角色、人格和表情资源，需要等一会儿；加载页会显示真实进度。
+The first launch prepares characters, personas and sticker resources, which takes a moment; the loading screen shows real progress.
 
-### 配置模型
+### Configure a model
 
-星伴需要一个 OpenAI 兼容的大模型服务：
+Starlit needs an OpenAI-compatible model service:
 
-1. 打开「设置 → 高级与开发者配置」
-2. 填写接口地址、模型名和 API Key
-3. 保存后开始聊天
+1. Open **Settings → Advanced & developer configuration**
+2. Fill in the base URL, model name and API key
+3. Save and start chatting
 
-默认面向 DeepSeek：
+Defaults target DeepSeek:
 
 ```yaml
 base_url: https://api.deepseek.com
@@ -124,83 +126,84 @@ model: deepseek-chat
 reasoning_effort: low
 ```
 
-API Key 只保存在本机配置文件里，不上传，也不会写进日志。
+The API key stays in the local config file. It is not uploaded and never written to logs.
 
-### 从源码构建
+### Build from source
 
-媒体包（约 759 MB）不放在 Git 仓库里，发布时作为 Release 附件。构建前先准备媒体文件：
-
-```bash
-./scripts/fetch-media.sh
-```
-
-脚本会按 `resources/media/manifest.json` 检查并校验 SHA-256：
-
-- 本地已有完整文件 → 直接使用
-- 只有 `.zst.000` 分片 → 自动合并并校验
-- 都没有 → 从 `manifest.json` 的 `base_url` 下载；未配置时用环境变量指定：
+Media packs (about 759 MB) are not stored in Git and ship as release assets. Fetch them first:
 
 ```bash
-STARLIT_MEDIA_URL=https://你的地址 ./scripts/fetch-media.sh
+make media
 ```
 
+The script checks `resources/media/manifest.json` and verifies each pack:
 
-准备完成后：
+- complete local files → used as is
+- only `.zst.000` parts → merged and verified
+- nothing present → downloaded from `base_url`; override with:
 
 ```bash
-npm install
-npm run dev      # 开发
-npm run build    # 打包
+STARLIT_MEDIA_URL=https://your-host make media
 ```
 
-或者一步完成媒体准备与打包：
+Then build:
 
 ```bash
-./build.sh
+make deps          # npm install
+make dev           # development
+make build         # tauri build
 ```
 
-Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebView2。
+Linux needs `webkit2gtk-4.1`, `gtk+-3.0` and `libsoup-3.0`; Windows needs WebView2.
+
+`make help` lists every target.
 
 ### Windows MSI
 
-Windows 安装包用 GNU `msitools` 的 `wixl` 在 Linux 上直接生成，不需要 Windows 或 Wine：
+The Windows installer is produced on Linux with `wixl` from GNU `msitools`; no Windows or Wine required:
 
 ```bash
 sudo apt install msitools
-./scripts/build-windows.sh     # 交叉编译 exe，并自动打包 MSI
+make windows-msi     # cross-compile the exe, then build the MSI
 ```
 
-产物：`dist/StarlitFOSS-<version>-x64.msi`（约 772 MB，含媒体包）。
+Output: `dist/StarlitFOSS-<version>-x64.msi` (about 772 MB with media).
 
-只想要轻量安装包（不含媒体）：
+A slim installer without media packs:
 
 ```bash
-INCLUDE_MEDIA=0 ./scripts/build-msi.sh
+make msi INCLUDE_MEDIA=0
 ```
 
-细节见 `installer/README.md`。
+### Portable Linux package
+
+```bash
+make linux-package
+```
+
+Produces `dist/StarlitFOSS-<version>-linux-x86_64.tar.gz` plus a `.sha256` file.
 
 ---
 
-## TUI 工具
+## TUI tool
 
-仓库自带两个命令行工具，功能一致：
+The repository ships two equivalent command-line tools:
 
 ```bash
 # Linux / macOS
-./tools/tui.sh
+make tui
 
 # Windows PowerShell
 powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 ```
 
-菜单提供：
+Menu entries:
 
-1. **导出日志文件夹** — Linux/macOS 导出 `.tar.zst`（有 zstd 时），Windows 导出 `.zip`
-2. **安装 WebView2** — Windows 检测并静默安装 Evergreen Runtime；Linux 提示不需要
-3. **检查文件完整性** — 校验可执行文件、媒体包 MD5、数据库 `integrity_check`、日志目录
+1. **Export logs** — `.tar.zst` on Linux/macOS when `zstd` exists, `.zip` on Windows
+2. **Install WebView2** — detects and silently installs the Evergreen runtime on Windows; reports that it is not needed elsewhere
+3. **Check file integrity** — executable, media pack MD5, database `integrity_check`, log directory
 
-也支持非交互调用：
+Non-interactive use:
 
 ```bash
 ./tools/tui.sh --export
@@ -212,68 +215,66 @@ powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 .\tools\tui.ps1 -Action check
 ```
 
-`tui.ps1` 也支持 PowerShell 7+（`pwsh`）在 Linux / macOS 上运行：
+`tui.ps1` also runs under PowerShell 7+ (`pwsh`) on Linux and macOS:
 
-- 数据目录默认按平台解析：Linux `~/.local/share/starlit-desktop`，macOS `~/Library/Application Support/starlit-desktop`，Windows `%APPDATA%\starlit-desktop`
-- 导出日志优先用 `tar` + `zstd` 生成 `.tar.zst`，没有 zstd 时退回 `.zip`
-- 安装 WebView2 会直接提示当前平台不需要
-- 完整性检查会额外查找 `src-tauri/target/{release,debug}/starlit-foss`
+- data root is resolved per platform: Linux `~/.local/share/starlit-desktop`, macOS `~/Library/Application Support/starlit-desktop`, Windows `%APPDATA%\starlit-desktop`
+- log export prefers `tar` + `zstd`, falling back to `.zip`
+- WebView2 installation reports that the current platform does not need it
+- integrity check also looks in `src-tauri/target/{release,debug}/starlit-foss`
 
-可用 `STARLIT_APP_ROOT` / `STARLIT_DATA_ROOT` 覆盖应用目录与数据目录。
+`STARLIT_APP_ROOT` and `STARLIT_DATA_ROOT` override the app and data directories.
 
-## 你的数据在哪
+## Where your data lives
 
-- Linux：`~/.local/share/starlit-desktop`
-- Windows：`%APPDATA%\starlit-desktop`
+- Linux: `~/.local/share/starlit-desktop`
+- Windows: `%APPDATA%\starlit-desktop`
 
-里面是聊天记录、长期记忆、人格、头像、表情包和模型配置。没有统计、没有埋点、没有云端账号；唯一的外部请求是你自己配置的模型接口。
+It holds chat history, long-term memory, personas, avatars, stickers and model configuration. No telemetry, no analytics, no cloud account; the only outbound request is the model endpoint you configure.
 
-设置 → 数据备份可以导出 zip（数据库、人格、角色/群资料、表情索引，不含 API Key）；恢复后重启生效。
+**Settings → Data backup** exports a zip with the database, personas, character/group data and sticker index (API key excluded). Restore takes effect after a restart.
 
-应用运行时会在数据目录放置锁文件，防止两个实例同时改同一份数据。看到「系统文件正在被占用」时，说明还有另一个星伴没有退出。
-
----
-
-## 设计想法
-
-星伴想做的不是「一个能聊天的模型」，而是一个**记得你、有自己的生活、会主动靠近**的伙伴。
-
-所以：
-
-- 回复会分成几条，中间有停顿
-- 深夜不会突然发消息
-- 你很久没回复，她会慢慢安静下来
-- 记住的事会随聊天积累，而不是每次从头开始
-
-她仍然是一个本地程序。人设是设定，记忆是数据，情感体验由你自己定义。
+A lock file prevents two instances from writing the same data. If you see "system file is in use", another Starlit instance is still running.
 
 ---
 
-## 接下来
+## Design notes
 
-1. 软件更新器
-2. Android 10+ 与 FreeBSD x86_64
-3. 更多的自动化测试
-4. 备份的定时/自动策略
-5. 群聊的更多细节（等级权限、群内分享）
+The goal is not "a model that can chat" but a companion that **remembers you, has her own life and reaches out**.
+
+So:
+
+- replies arrive in several bubbles with pauses
+- no sudden messages late at night
+- if you stop replying, she gradually quiets down
+- memories accumulate with the conversation instead of resetting every time
+
+She is still a local program. The persona is a setting, memory is data, and the emotional experience is yours to define.
 
 ---
 
-## 许可证
+## Roadmap
 
-本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 发布，完整条款见 [LICENSE](LICENSE)。
+1. Software updater
+2. Android 10+ and FreeBSD x86_64
+3. More automated tests
+4. Scheduled / automatic backups
+5. More group chat details (levels, permissions, in-group sharing)
 
-- 修改、分发或通过网络提供服务时，需要以同一许可证开放对应源代码
-- 原版角色、人格与美术资源的版权仍归原作者及相应权利人，不因本项目许可证而改变
+---
 
-## 关于这个项目
+## License
 
-星伴 FOSS 是个人主导的本地优先项目，没有账号体系，也没有商业化计划。
+Released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. See [LICENSE](LICENSE).
 
-它建立在对原版客户端的逆向分析之上：前端界面与交互沿用原版，后端用 Rust 重新实现。这样既能保留原有体验，又能把协议层和冗余进程彻底拿掉。
+- Modifying, distributing or offering the software over a network requires publishing the corresponding source under the same license
+- Copyright of the original characters, personas and artwork remains with their respective holders and is unaffected by this project's license
 
-当前版本由 AI 辅助开发完成（DeepSeek V4.1 Flash，2026-11-06），代码仍在持续整理中；这不代表开发者个人的代码水平或能力。
+## About
 
-欢迎提交 Issue 或 Pull Request。
+Starlit FOSS is a personal, local-first project with no accounts and no commercial plans.
 
-更多问题见 [QA.md](QA.md)。
+It builds on reverse engineering of the original client: the frontend and interaction model are reused, while the backend is reimplemented in Rust. That keeps the familiar experience while removing the protocol layer and redundant processes.
+
+The current version was developed with AI assistance (DeepSeek V4.1 Flash, 2026-11-06). The code is still being cleaned up; this does not represent the developer's personal coding ability.
+
+Issues and pull requests are welcome.
