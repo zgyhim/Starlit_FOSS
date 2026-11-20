@@ -45,7 +45,16 @@ else
   echo "未找到预期的 exe，请检查 target 目录。"
 fi
 echo
-echo "说明：本次只编译 exe，没有生成 NSIS 安装包（本机未安装 makensis）。"
+if command -v wixl >/dev/null 2>&1; then
+  step "生成 MSI 安装包"
+  if ./scripts/build-msi.sh; then
+    echo "MSI：dist/StarlitFOSS-*-x64.msi"
+  else
+    echo "MSI 构建失败，exe 仍可使用。"
+  fi
+else
+  echo "未安装 wixl，跳过 MSI。安装：sudo apt install msitools"
+fi
 echo "日志已保存：$LOG"
 printf '\n按 Enter 关闭窗口…'
 read -r _

@@ -161,6 +161,25 @@ npm run build    # 打包
 
 Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebView2。
 
+### Windows MSI
+
+Windows 安装包用 GNU `msitools` 的 `wixl` 在 Linux 上直接生成，不需要 Windows 或 Wine：
+
+```bash
+sudo apt install msitools
+./scripts/build-windows.sh     # 交叉编译 exe，并自动打包 MSI
+```
+
+产物：`dist/StarlitFOSS-<version>-x64.msi`（约 772 MB，含媒体包）。
+
+只想要轻量安装包（不含媒体）：
+
+```bash
+INCLUDE_MEDIA=0 ./scripts/build-msi.sh
+```
+
+细节见 `installer/README.md`。
+
 ---
 
 ## TUI 工具
