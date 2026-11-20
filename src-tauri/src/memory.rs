@@ -420,8 +420,12 @@ pub async fn extract(
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            crate::logging::error("memory", &format!("request failed: {e}"));
+            e.to_string()
+        })?;
     if !response.status().is_success() {
+        crate::logging::error("memory", &format!("HTTP {}", response.status()));
         return Ok(());
     }
     let body: Value = response.json().await.unwrap_or_default();

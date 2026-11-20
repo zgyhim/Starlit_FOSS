@@ -172,13 +172,17 @@ pub async fn chat(
     messages: Vec<Value>,
 ) -> Result<String, String> {
     if cfg.llm.api_key.trim().is_empty() {
+        crate::logging::error("llm", "API key is not configured");
         return Err("missing_api_key".into());
     }
     let base = cfg.llm.base_url.trim_end_matches('/');
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.llm.timeout.max(1)))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            crate::logging::error("llm", &format!("failed to build HTTP client: {e}"));
+            e.to_string()
+        })?;
     let mut body = json!({
         "model": cfg.llm.model,
         "messages": messages,
@@ -195,7 +199,7 @@ pub async fn chat(
         .send()
         .await
         .map_err(|e| {
-            crate::logging::warn("llm", &format!("request failed: {e}"));
+            crate::logging::error("llm", &format!("request failed: {e}"));
             e.to_string()
         })?;
     let status = response.status();
@@ -206,17 +210,21 @@ pub async fn chat(
             .and_then(|e| e.get("message"))
             .and_then(Value::as_str)
             .unwrap_or("模型请求失败");
+        crate::logging::error("llm", &format!("HTTP {status}: {message}"));
         return Err(message.to_string());
     }
-    Ok(body
+    let content = body
         .get("choices")
         .and_then(Value::as_array)
         .and_then(|choices| choices.first())
         .and_then(|choice| choice.get("message"))
         .and_then(|message| message.get("content"))
         .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string())
+        .unwrap_or("");
+    if content.trim().is_empty() {
+        crate::logging::error("llm", "empty response from model API");
+    }
+    Ok(content.to_string())
 }
 
 fn emit_status(app: &AppHandle, conv: &Conversation, message_id: i64, status: &str, reason: &str) {
