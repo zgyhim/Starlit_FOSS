@@ -165,18 +165,57 @@ PY
   pause
 }
 
+BOX_INNER=66
+
+fit_text() {
+  local text="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$text" "$BOX_INNER" <<'PY'
+import sys, unicodedata
+text, width = sys.argv[1], int(sys.argv[2])
+
+def cell(ch):
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+out = ""
+used = 0
+for ch in text:
+    if used + cell(ch) > width:
+        out += "…"
+        break
+    out += ch
+    used += cell(ch)
+print(out + " " * (width - used))
+PY
+  else
+    printf '%-*s' "$BOX_INNER" "$text"
+  fi
+}
+
+box_rule() {
+  local count=$((BOX_INNER + 2)) i
+  for ((i = 0; i < count; i++)); do printf '═'; done
+}
+box_top()    { printf '╔'; box_rule; printf '╗\n'; }
+box_sep()    { printf '╠'; box_rule; printf '╣\n'; }
+box_bottom() { printf '╚'; box_rule; printf '╝\n'; }
+box_line()   { printf '║ %s ║\n' "$(fit_text "$1")"; }
+
 main_menu() {
   while true; do
     clear 2>/dev/null || true
-    printf '%s\n' "${C_BOLD}${C_CYAN}星伴 FOSS TUI 工具${C_RESET}"
-    printf '应用目录:\t%s\n' "$APP_ROOT"
-    printf '数据目录:\t%s\n' "$DATA_ROOT"
-    printf '\n'
-    printf '1\t导出日志文件夹\n'
-    printf '2\t安装 WebView2（Windows）\n'
-    printf '3\t检查文件完整性\n'
-    printf '0\t退出\n'
-    read -r -p "请选择： " choice || exit 0
+    box_top
+    box_line "星伴 FOSS TUI 工具"
+    box_sep
+    box_line "应用目录: $APP_ROOT"
+    box_line "数据目录: $DATA_ROOT"
+    box_sep
+    box_line "1  导出日志文件夹"
+    box_line "2  安装 WebView2（Windows）"
+    box_line "3  检查文件完整性"
+    box_line "0  退出"
+    box_bottom
+    read -r -p "请选择: " choice || exit 0
     case "$choice" in
       1) export_logs ;;
       2) install_webview2 ;;

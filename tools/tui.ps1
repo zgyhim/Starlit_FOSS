@@ -134,17 +134,61 @@ function Check-Integrity {
   Pause-Menu
 }
 
+$BoxInner = 66
+
+function Get-DisplayWidth([string]$text) {
+  $width = 0
+  foreach ($ch in $text.ToCharArray()) {
+    $code = [int]$ch
+    if (($code -ge 0x1100 -and $code -le 0x115F) -or
+        ($code -ge 0x2E80 -and $code -le 0xA4CF) -or
+        ($code -ge 0xAC00 -and $code -le 0xD7A3) -or
+        ($code -ge 0xF900 -and $code -le 0xFAFF) -or
+        ($code -ge 0xFE30 -and $code -le 0xFE4F) -or
+        ($code -ge 0xFF00 -and $code -le 0xFF60) -or
+        ($code -ge 0xFFE0 -and $code -le 0xFFE6)) {
+      $width += 2
+    } else {
+      $width += 1
+    }
+  }
+  return $width
+}
+
+function Format-BoxText([string]$text) {
+  $out = ''
+  $used = 0
+  foreach ($ch in $text.ToCharArray()) {
+    $w = if ((Get-DisplayWidth $ch) -eq 2) { 2 } else { 1 }
+    if ($used + $w -gt $BoxInner) { $out += '…'; break }
+    $out += $ch
+    $used += $w
+  }
+  return $out + (' ' * ($BoxInner - $used))
+}
+
+function Write-BoxLine([string]$text) {
+  Write-Host "║ $(Format-BoxText $text) ║"
+}
+
+function Write-BoxSep {
+  Write-Host ('╠' + ('═' * ($BoxInner + 2)) + '╣')
+}
+
 function Show-Menu {
   while ($true) {
     Clear-Host
-    Write-Host '星伴 FOSS TUI 工具' -ForegroundColor Cyan
-    Write-Host "应用目录:`t$AppRoot"
-    Write-Host "数据目录:`t$DataRoot"
-    Write-Host ''
-    Write-Host "1`t导出日志文件夹"
-    Write-Host "2`t安装 WebView2"
-    Write-Host "3`t检查文件完整性"
-    Write-Host "0`t退出"
+    Write-Host ('╔' + ('═' * ($BoxInner + 2)) + '╗')
+    Write-BoxLine '星伴 FOSS TUI 工具'
+    Write-BoxSep
+    Write-BoxLine "应用目录: $AppRoot"
+    Write-BoxLine "数据目录: $DataRoot"
+    Write-BoxSep
+    Write-BoxLine '1  导出日志文件夹'
+    Write-BoxLine '2  安装 WebView2（Windows）'
+    Write-BoxLine '3  检查文件完整性'
+    Write-BoxLine '0  退出'
+    Write-Host ('╚' + ('═' * ($BoxInner + 2)) + '╝')
     $choice = Read-Host '请选择'
     switch ($choice) {
       '1' { Export-Logs }
