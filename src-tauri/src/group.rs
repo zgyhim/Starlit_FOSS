@@ -370,7 +370,8 @@ async fn generate(
 ) -> bool {
     let cfg = state.config();
     let (cid, name, _, _) = member;
-    let persona = persona_of(state, name);
+    let slug = crate::api::character_slug(state, cid);
+    let persona = persona_of(state, &slug);
     let history = transcript(state, conv, 20);
     let owner = cfg.qq.server.owner_nickname.clone();
     let memories = crate::memory::recall(state, &history, cfg.memory.recall_top_k);

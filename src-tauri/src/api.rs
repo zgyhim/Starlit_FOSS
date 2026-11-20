@@ -700,6 +700,22 @@ fn find_character(state: &AppState, id: &str) -> Option<(String, String)> {
         })
 }
 
+pub(crate) fn character_slug(state: &AppState, id: &str) -> String {
+    read_characters(state)
+        .get("characters")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                if item.get("id").and_then(Value::as_str) == Some(id) {
+                    item.get("slug").and_then(Value::as_str).map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| id.to_string())
+}
+
 fn persona_dir(state: &AppState, slug: &str) -> PathBuf {
     state.paths.persona.join("characters").join(slug)
 }
