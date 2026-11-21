@@ -8,7 +8,7 @@
 
 没有 QQ 协议，没有本地 HTTP/WebSocket 服务，没有令牌，没有后台 Python 进程。打开就是聊天。
 
-> **重要注意事项：** 本项目为非官方项目，与原作者无关。原版角色、人格与美术资源版权归原作者及相应权利人所有。
+> **重要注意事项：安装包没有交互向导。** 双击后会直接开始安装：没有许可协议页、没有安装目录选择、也没有确认步骤，直接装到 `%ProgramFiles%\Starlit FOSS`。想好再打开。卸载走 **设置 → 应用 → 已安装的应用**。
 
 ---
 
@@ -159,8 +159,6 @@ Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebV
 `make help` 可以列出所有目标。
 
 ### Windows MSI
-
-> **安装包没有交互向导。** 双击后会直接开始安装：没有许可协议页、没有安装目录选择、也没有确认步骤，安装到 `%ProgramFiles%\Starlit FOSS`。想好再打开。卸载走 **设置 → 应用 → 已安装的应用**。
 
 Windows 安装包用 GNU `msitools` 的 `wixl` 在 Linux 上直接生成，不需要 Windows 或 Wine：
 

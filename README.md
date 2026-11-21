@@ -8,7 +8,7 @@ Starlit FOSS is an independent reimplementation of the Starlit desktop app. It k
 
 No QQ protocol, no local HTTP/WebSocket server, no access tokens, no background Python process. Open it and talk.
 
-> **Important notice:** This is an unofficial project, not affiliated with the original author. Characters, personas and artwork remain the property of their respective rights holders.
+> **Important notice: the Windows installer has no interactive wizard.** Double-clicking starts installing immediately: no license page, no install-directory picker, no confirmation step. It installs to `%ProgramFiles%\Starlit FOSS`. Make sure you want to install before opening the file. To uninstall, use **Settings → Apps → Installed apps**.
 
 ---
 
@@ -159,8 +159,6 @@ Linux needs `webkit2gtk-4.1`, `gtk+-3.0` and `libsoup-3.0`; Windows needs WebVie
 `make help` lists every target.
 
 ### Windows MSI
-
-> **The MSI has no interactive wizard.** Double-clicking starts installing immediately: no license page, no install-directory picker, no confirmation step. Installation goes to `%ProgramFiles%\Starlit FOSS`. Make sure you want to install before opening the file. To uninstall, use **Settings → Apps → Installed apps**.
 
 The Windows installer is produced on Linux with `wixl` from GNU `msitools`; no Windows or Wine required:
 
