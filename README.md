@@ -8,7 +8,7 @@ Starlit FOSS is an independent reimplementation of the Starlit desktop app. It k
 
 No QQ protocol, no local HTTP/WebSocket server, no access tokens, no background Python process. Open it and talk.
 
-> Unofficial project, not affiliated with the original author. Characters, personas and artwork remain the property of their respective rights holders.
+> **Important notice:** This is an unofficial project, not affiliated with the original author. Characters, personas and artwork remain the property of their respective rights holders.
 
 ---
 
