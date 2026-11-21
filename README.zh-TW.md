@@ -194,13 +194,39 @@ make windows-msi     # 交叉編譯 exe，再打包 MSI
 make msi INCLUDE_MEDIA=0
 ```
 
+### FreeBSD 套件
+
+在 FreeBSD 裡原生建置並打包（交叉編譯不可行，見上文說明）：
+
+```bash
+make pkg
+```
+
+產生 `dist/starlit-foss-<version>.pkg`，依賴宣告為 `webkit2-gtk_41`、`gtk3`、`libsoup3`、`dbus`，安裝時由 `pkg` 自動補齊。檔案裝到 `/usr/local/lib/starlit-foss`，啟動器在 `/usr/local/bin/starlit-foss`。
+
 ### Linux 便攜包
 
 ```bash
-make linux-package
+make tar
 ```
 
-生成 `dist/StarlitFOSS-<version>-linux-x86_64.tar.gz` 與對應的 `.sha256`。
+產生 `dist/StarlitFOSS-<version>-linux-x86_64.tar.gz` 與對應的 `.sha256`。
+
+### 打包目錄結構
+
+所有套件格式都是同一個入口下的外掛：
+
+```text
+packaging/
+├─ package.sh        分發入口：./packaging/package.sh <format>
+├─ lib/common.sh     暫存目錄、版本號、啟動器
+└─ pm/
+   ├─ freebsd.sh     .pkg
+   ├─ msi.sh         .msi
+   └─ tar.sh         Linux 便攜 tar.gz
+```
+
+新增套件管理器只需放一個 `packaging/pm/<名稱>.sh`，`make package` 會自動列出。每次打包都使用獨立暫存目錄，結束（含失敗與 Ctrl-C）時清理，不會在原始碼樹留下殘留。
 
 ---
 

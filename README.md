@@ -194,13 +194,39 @@ A slim installer without media packs:
 make msi INCLUDE_MEDIA=0
 ```
 
+### FreeBSD package
+
+Build and install the FreeBSD `.pkg` inside FreeBSD (native build, see the note below):
+
+```bash
+make pkg
+```
+
+Produces `dist/starlit-foss-<version>.pkg`, with `webkit2-gtk_41`, `gtk3`, `libsoup3` and `dbus` declared as dependencies so `pkg` installs them automatically. Files go to `/usr/local/lib/starlit-foss` plus a launcher at `/usr/local/bin/starlit-foss`.
+
 ### Portable Linux package
 
 ```bash
-make linux-package
+make tar
 ```
 
 Produces `dist/StarlitFOSS-<version>-linux-x86_64.tar.gz` plus a `.sha256` file.
+
+### Packaging layout
+
+All package formats are plugins behind one entry point:
+
+```text
+packaging/
+├─ package.sh        dispatcher: ./packaging/package.sh <format>
+├─ lib/common.sh     staging, version, launcher helpers
+└─ pm/
+   ├─ freebsd.sh     .pkg
+   ├─ msi.sh         .msi
+   └─ tar.sh         portable tar.gz
+```
+
+Adding a package manager means dropping `packaging/pm/<name>.sh`; `make package` lists what is available. Every build stages into a fresh temporary directory and removes it on exit, including on failure or Ctrl-C, so nothing leaks into the source tree.
 
 ---
 
