@@ -117,7 +117,7 @@ No BaaS, no database server, no message queue, no container runtime.
 | Linux x86_64 | ✅ development and verification platform |
 | Windows x86_64 | ✅ supported |
 | Android 10+ | 🚧 planned |
-| FreeBSD x86_64 | 🚧 planned |
+| FreeBSD x86_64 | ✅ native build and `.pkg` (desktop runtime not yet verified) |
 
 ---
 
@@ -194,15 +194,35 @@ A slim installer without media packs:
 make msi INCLUDE_MEDIA=0
 ```
 
-### FreeBSD package
+### FreeBSD
 
-Build and install the FreeBSD `.pkg` inside FreeBSD (native build, see the note below):
+FreeBSD must build natively: cross-compiling a Tauri app from Linux is not practical, because WebKitGTK and GTK are linked against FreeBSD libraries and WebKit uses gobject-introspection at build time. Build inside a FreeBSD 15.x machine, VM or jail.
+
+Dependencies:
+
+```sh
+sudo pkg install -y rust gtk3 webkit2-gtk_41 libsoup3 dbus pkgconf
+```
+
+Then build and package:
 
 ```bash
 make pkg
 ```
 
-Produces `dist/starlit-foss-<version>.pkg`, with `webkit2-gtk_41`, `gtk3`, `libsoup3` and `dbus` declared as dependencies so `pkg` installs them automatically. Files go to `/usr/local/lib/starlit-foss` plus a launcher at `/usr/local/bin/starlit-foss`.
+Produces `dist/starlit-foss-<version>.pkg`. The manifest declares `webkit2-gtk_41`, `gtk3`, `libsoup3` and `dbus` as runtime dependencies, so `pkg` resolves them on install. Files go to `/usr/local/lib/starlit-foss`, the launcher to `/usr/local/bin/starlit-foss`.
+
+Install:
+
+```sh
+sudo pkg add dist/starlit-foss-<version>.pkg
+```
+
+Notes:
+
+- single-instance protection is disabled on FreeBSD because `tauri-plugin-single-instance` has no FreeBSD implementation
+- the build is verified; launching on a real FreeBSD desktop (Xorg with DRM/KMS) has not been verified yet, headless Xvfb fails at EGL/DRI initialisation
+- binary packages come from `pkg`, so no GTK or WebKit copies are bundled
 
 ### Portable Linux package
 
@@ -300,7 +320,7 @@ She is still a local program. The persona is a setting, memory is data, and the 
 ## Roadmap
 
 1. Software updater
-2. Android 10+ and FreeBSD x86_64
+2. Android 10+
 3. More automated tests
 4. Scheduled / automatic backups
 5. More group chat details (levels, permissions, in-group sharing)

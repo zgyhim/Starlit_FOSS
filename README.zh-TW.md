@@ -117,7 +117,7 @@
 | Linux x86_64 | ✅ 當前開發與驗證平臺 |
 | Windows x86_64 | ✅ 支援 |
 | Android 10+ | 🚧 計劃中 |
-| FreeBSD x86_64 | 🚧 計劃中 |
+| FreeBSD x86_64 | ✅ 原生建置與 `.pkg`（桌面執行尚未驗證） |
 
 ---
 
@@ -194,15 +194,35 @@ make windows-msi     # 交叉編譯 exe，再打包 MSI
 make msi INCLUDE_MEDIA=0
 ```
 
-### FreeBSD 套件
+### FreeBSD
 
-在 FreeBSD 裡原生建置並打包（交叉編譯不可行，見上文說明）：
+FreeBSD 必須原生建置：從 Linux 交叉編譯 Tauri 應用並不現實，因為 WebKitGTK 與 GTK 需要連結 FreeBSD 的函式庫，且 WebKit 建置時要執行 gobject-introspection。請在 FreeBSD 15.x 的機器、虛擬機或 jail 裡建置。
+
+依賴：
+
+```sh
+sudo pkg install -y rust gtk3 webkit2-gtk_41 libsoup3 dbus pkgconf
+```
+
+建置並打包：
 
 ```bash
 make pkg
 ```
 
-產生 `dist/starlit-foss-<version>.pkg`，依賴宣告為 `webkit2-gtk_41`、`gtk3`、`libsoup3`、`dbus`，安裝時由 `pkg` 自動補齊。檔案裝到 `/usr/local/lib/starlit-foss`，啟動器在 `/usr/local/bin/starlit-foss`。
+產生 `dist/starlit-foss-<version>.pkg`。依賴宣告為 `webkit2-gtk_41`、`gtk3`、`libsoup3`、`dbus`，安裝時由 `pkg` 自動補齊。檔案裝到 `/usr/local/lib/starlit-foss`，啟動器在 `/usr/local/bin/starlit-foss`。
+
+安裝：
+
+```sh
+sudo pkg add dist/starlit-foss-<version>.pkg
+```
+
+說明：
+
+- FreeBSD 上沒有單一實例保護，`tauri-plugin-single-instance` 沒有 FreeBSD 實作
+- 編譯已通過；在真實 FreeBSD 桌面（Xorg + DRM/KMS）上的啟動尚未驗證，無頭 Xvfb 會卡在 EGL/DRI 初始化
+- 依賴走 `pkg`，不捆綁 GTK 與 WebKit
 
 ### Linux 便攜包
 
@@ -300,7 +320,7 @@ powershell -ExecutionPolicy Bypass -File tools\tui.ps1
 ## 接下來
 
 1. 軟體更新器
-2. Android 10+ 與 FreeBSD x86_64
+2. Android 10+
 3. 更多的自動化測試
 4. 備份的定時/自動策略
 5. 群聊的更多細節（等級許可權、群內分享）
