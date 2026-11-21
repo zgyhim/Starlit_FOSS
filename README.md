@@ -117,7 +117,7 @@ No BaaS, no database server, no message queue, no container runtime.
 | Linux x86_64 | ✅ development and verification platform |
 | Windows x86_64 | ✅ supported |
 | Android 10+ | 🚧 planned |
-| FreeBSD x86_64 | ✅ native build and `.pkg` (desktop runtime not yet verified) |
+| FreeBSD x86_64 | ✅ supported |
 
 ---
 
