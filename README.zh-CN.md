@@ -91,6 +91,25 @@
 
 ---
 
+## 技术栈
+
+| 层次 | 选型 |
+|---|---|
+| 外壳 | Tauri 2（单进程，运行时不需要 Node / Python） |
+| 后端 | Rust 2021，最低 1.77.2 |
+| 前端 | 原版原生 HTML / CSS / JavaScript，无框架、无打包器 |
+| 异步运行时 | Tokio |
+| 存储 | SQLite（`rusqlite` bundled），配置用 YAML |
+| 模型调用 | `reqwest` + rustls，对接 OpenAI 兼容接口 |
+| 序列化 | `serde`、`serde_json`、`serde_yaml` |
+| 媒体包 | `zstd` + `tar`，首次启动解包并缓存 |
+| 日志 | `tracing` + logcat 风格格式，落盘与轮转 |
+| Web 引擎 | WebView2（Windows）、WebKitGTK（Linux）、WKWebView（macOS） |
+| 构建 | Makefile + npm + Tauri CLI；MSI 用 `wixl`（msitools） |
+
+没有 BaaS、没有数据库服务、没有消息队列、不依赖容器运行时。
+
+---
 ## 支持平台
 
 | 平台 | 状态 |

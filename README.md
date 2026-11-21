@@ -91,6 +91,25 @@ The rule behind these trade-offs: **rather lose a feature than bring back a vend
 
 ---
 
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Shell | Tauri 2 (single process, no Node/Python at runtime) |
+| Backend | Rust 2021, MSRV 1.77.2 |
+| Frontend | Original vanilla HTML / CSS / JavaScript, no framework, no bundler |
+| Async runtime | Tokio |
+| Storage | SQLite via `rusqlite` (bundled), YAML for configuration |
+| Model access | `reqwest` + rustls against OpenAI-compatible endpoints |
+| Serialization | `serde`, `serde_json`, `serde_yaml` |
+| Media packs | `zstd` + `tar`, cached on first launch |
+| Logging | `tracing` + logcat-style formatting, file output and rotation |
+| Web engine | WebView2 (Windows), WebKitGTK (Linux), WKWebView (macOS) |
+| Build | Makefile + npm + Tauri CLI; MSI via `wixl` (msitools) |
+
+No BaaS, no database server, no message queue, no container runtime.
+
+---
 ## Platforms
 
 | Platform | Status |
