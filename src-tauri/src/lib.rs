@@ -22,7 +22,7 @@ pub fn run() {
     compat::ensure_supported();
 
     let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
+    #[cfg(all(desktop, any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
