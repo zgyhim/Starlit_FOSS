@@ -160,6 +160,8 @@ Linux needs `webkit2gtk-4.1`, `gtk+-3.0` and `libsoup-3.0`; Windows needs WebVie
 
 ### Windows MSI
 
+> **The MSI has no interactive wizard.** Double-clicking starts installing immediately: no license page, no install-directory picker, no confirmation step. Installation goes to `%ProgramFiles%\Starlit FOSS`. Make sure you want to install before opening the file. To uninstall, use **Settings → Apps → Installed apps**.
+
 The Windows installer is produced on Linux with `wixl` from GNU `msitools`; no Windows or Wine required:
 
 ```bash

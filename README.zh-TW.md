@@ -160,6 +160,8 @@ Linux 需要 `webkit2gtk-4.1`、`gtk+-3.0`、`libsoup-3.0`；Windows 需要 WebV
 
 ### Windows MSI
 
+> **安裝包沒有互動精靈。** 雙擊後會直接開始安裝：沒有授權條款頁、沒有安裝目錄選擇、也沒有確認步驟，會裝到 `%ProgramFiles%\Starlit FOSS`。想清楚再開啟。解除安裝請走 **設定 → 應用程式 → 已安裝的應用程式**。
+
 Windows 安裝包用 GNU `msitools` 的 `wixl` 在 Linux 上直接生成，不需要 Windows 或 Wine：
 
 ```bash
